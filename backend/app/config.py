@@ -1,7 +1,7 @@
 """Validated configuration; importing this module never calls external services."""
 
-from functools import lru_cache
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
@@ -17,6 +17,7 @@ class Settings(BaseModel):
     gemini_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     database_url: SecretStr | None = None
+    turso_auth_token: SecretStr | None = None
     llm_provider: Literal["auto", "gemini", "openai"] = "auto"
     gemini_model: str = Field(default="gemini-3.5-flash", min_length=1)
     openai_model: str = Field(default="gpt-4o-mini", min_length=1)
@@ -25,7 +26,7 @@ class Settings(BaseModel):
     llm_max_output_tokens: int = Field(default=4096, ge=512, le=8192)
     local_results_path: Path = PROJECT_ROOT / "data" / "results.json"
 
-    @field_validator("gemini_api_key", "openai_api_key", "database_url", mode="before")
+    @field_validator("gemini_api_key", "openai_api_key", "database_url", "turso_auth_token", mode="before")
     @classmethod
     def empty_secret_is_none(cls, value: object) -> object:
         if isinstance(value, str):

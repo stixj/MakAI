@@ -1,17 +1,19 @@
-"""Persistence adapters: atomic local snapshot or PostgreSQL batch upsert."""
+"""Persistence adapters: atomic local snapshot, PostgreSQL or Turso batch upsert."""
 
+import json
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Protocol
+from urllib.parse import urlsplit
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from .config import Settings
 from .schemas import JobFitEvaluation, JobOffer
+from .turso import StorageConfigurationError, TursoEvaluationStore
 
 
 class EvaluationStore(Protocol):
@@ -68,9 +70,8 @@ class PostgresEvaluationStore:
         with psycopg.connect(
             self._database_url, connect_timeout=10,
             options="-c statement_timeout=15000",
-        ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute("""
+        ) as connection, connection.cursor() as cursor:
+            cursor.execute("""
                     CREATE TABLE IF NOT EXISTS makai_job_evaluations (
                         offer_id TEXT PRIMARY KEY,
                         offer JSONB NOT NULL,
@@ -78,8 +79,8 @@ class PostgresEvaluationStore:
                         evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                     )
                 """)
-                cursor.executemany(
-                    """
+            cursor.executemany(
+                """
                     INSERT INTO makai_job_evaluations (offer_id, offer, evaluation)
                     VALUES (%s, %s, %s)
                     ON CONFLICT (offer_id) DO UPDATE SET
@@ -87,15 +88,26 @@ class PostgresEvaluationStore:
                         evaluation = EXCLUDED.evaluation,
                         evaluated_at = NOW()
                     """,
-                    [
-                        (offer.id, Jsonb(offer.model_dump(mode="json")),
-                         Jsonb(evaluations[offer.id].model_dump(mode="json")))
-                        for offer in offers if offer.id in evaluations
-                    ],
-                )
+                [
+                    (offer.id, Jsonb(offer.model_dump(mode="json")),
+                     Jsonb(evaluations[offer.id].model_dump(mode="json")))
+                    for offer in offers if offer.id in evaluations
+                ],
+            )
 
 
 def create_store(settings: Settings) -> EvaluationStore:
     if settings.database_url is not None:
-        return PostgresEvaluationStore(settings.database_url.get_secret_value())
+        url = settings.database_url.get_secret_value()
+        try:
+            scheme = urlsplit(url).scheme
+        except ValueError:
+            raise StorageConfigurationError("Neplatná DATABASE_URL v .env.") from None
+        if scheme in {"libsql", "https"}:
+            if settings.turso_auth_token is None:
+                raise StorageConfigurationError("Pro Turso doplň TURSO_AUTH_TOKEN v .env.")
+            return TursoEvaluationStore(url, settings.turso_auth_token.get_secret_value())
+        if scheme in {"postgres", "postgresql"}:
+            return PostgresEvaluationStore(url)
+        raise StorageConfigurationError("DATABASE_URL musí používat libsql, https nebo postgresql.")
     return JsonEvaluationStore(settings.local_results_path)

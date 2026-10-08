@@ -4,17 +4,17 @@ import argparse
 import logging
 from typing import cast
 
+from app.config import PROJECT_ROOT, get_settings
+from app.demo import demo_evaluate_job, sample_offers
+from app.graph import build_graph
+from app.schemas import MakAIState
+from app.storage import JsonEvaluationStore, create_store
+from app.turso import StorageConfigurationError, TursoEvaluationStore
 from pydantic import ValidationError
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
-from app.config import PROJECT_ROOT, get_settings
-from app.demo import demo_evaluate_job, sample_offers
-from app.graph import build_graph
-from app.schemas import MakAIState
-from app.storage import JsonEvaluationStore
 
 
 def main() -> int:
@@ -33,18 +33,23 @@ def main() -> int:
             console.print("[bold yellow]OFFLINE DEMO – výsledky jsou pevné ukázkové hodnoty.[/]")
         else:
             settings = get_settings()
-            graph = build_graph(settings=settings)
+            store = create_store(settings)
+            graph = build_graph(settings=settings, store=store)
             destination = (
-                "PostgreSQL: makai_job_evaluations" if settings.database_url
+                ("Turso" if isinstance(store, TursoEvaluationStore) else "PostgreSQL")
+                + ": makai_job_evaluations" if settings.database_url
                 else str(settings.local_results_path)
             )
             console.print("[bold cyan]MakAI – živá LLM evaluace[/]")
         initial: MakAIState = {"offers": sample_offers(), "evaluations": {}, "errors": []}
         result = cast(MakAIState, graph.invoke(initial))
+    except StorageConfigurationError as exc:
+        console.print(Text(str(exc), style="red"))
+        return 1
     except ValidationError:
         console.print("[red]Neplatná konfigurace .env. Zkontroluj poskytovatele a číselné limity.[/]")
         return 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — CLI must redact unexpected SDK/DB errors.
         console.print(Text(f"Spuštění selhalo: {type(exc).__name__}", style="red"))
         return 1
 

@@ -2,7 +2,7 @@
 
 from typing import Annotated, Literal, Self
 
-from typing_extensions import TypedDict
+from typing_extensions import NotRequired, TypedDict
 
 from pydantic import (
     AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl,
@@ -53,3 +53,5 @@ class MakAIState(TypedDict):
     offers: list[JobOffer]
     evaluations: dict[str, JobFitEvaluation]
     errors: list[str]
+    skipped_duplicates: NotRequired[list[str]]
+    saved_ids: NotRequired[list[str]]

@@ -5,5 +5,9 @@ python-dotenv>=1.0,<2.0
 google-genai>=1.56,<2.0
 openai>=2.0,<3.0
 rich>=13.0,<15.0
+httpx>=0.28,<1.0
+beautifulsoup4>=4.12,<5.0
+# Windows nemá systémovou IANA databázi pro datum publikace bez času.
+tzdata>=2025.1; sys_platform == "win32"
 # Driver pro skutečný PostgreSQL/Neon save node, bez lokálního kompilátoru.
 psycopg[binary]>=3.3,<4.0

@@ -1,0 +1,92 @@
+"""Run real ingestion: python backend/run_hunt.py [--limit 15]."""
+
+import argparse
+import logging
+
+from pydantic import ValidationError
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
+if __package__:
+    from .app.config import get_settings
+    from .app.graph import build_graph
+    from .app.scrapers.startupjobs import ScraperError, fetch_startupjobs
+    from .app.storage import create_store
+    from .app.turso import StorageConfigurationError, TursoEvaluationStore
+else:
+    from app.config import get_settings
+    from app.graph import build_graph
+    from app.scrapers.startupjobs import ScraperError, fetch_startupjobs
+    from app.storage import create_store
+    from app.turso import StorageConfigurationError, TursoEvaluationStore
+
+
+def _limit(value: str) -> int:
+    number = int(value)
+    if not 1 <= number <= 100:
+        raise argparse.ArgumentTypeError("Limit musí být v rozsahu 1–100.")
+    return number
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="MakAI: StartupJobs → Turso → LangGraph → Turso")
+    parser.add_argument("--limit", type=_limit, default=15, help="Maximální počet nabídek (1–100)")
+    args = parser.parse_args(argv)
+    console = Console()
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
+    try:
+        settings = get_settings()
+        store = create_store(settings)
+        if not isinstance(store, TursoEvaluationStore):
+            raise StorageConfigurationError("Lov vyžaduje Turso: nastav DATABASE_URL a TURSO_AUTH_TOKEN.")
+        store.check_connection()
+        console.print("[bold cyan]MakAI – lov na StartupJobs[/]")
+        offers = fetch_startupjobs(args.limit)
+        console.print(f"Nalezeno: {len(offers)} nabídek.")
+        result = build_graph(settings=settings, store=store).invoke(
+            {"offers": offers, "evaluations": {}, "errors": []}
+        )
+    except (StorageConfigurationError, ScraperError) as exc:
+        console.print(Text(str(exc), style="red"))
+        return 1
+    except ValidationError:
+        console.print("[red]Neplatná konfigurace .env.[/]")
+        return 1
+    except Exception as exc:
+        console.print(Text(f"Lov selhal: {type(exc).__name__}.", style="red"))
+        return 1
+
+    console.print(f"Přeskočeno duplicit: {len(result['skipped_duplicates'])}.")
+    table = Table(title="Vyhodnocení nových nabídek")
+    for heading in ("Pozice", "Firma", "Skóre", "Verdikt"):
+        table.add_column(heading)
+    styles = {"STRONG_FIT": "green", "POTENTIAL_FIT": "yellow", "NO_GO": "red"}
+    for offer in result["offers"]:
+        evaluation = result["evaluations"].get(offer.id)
+        if evaluation is None:
+            table.add_row(Text(offer.title), Text(offer.company), "—", "CHYBA")
+            continue
+        table.add_row(
+            Text(offer.title), Text(offer.company), f"{evaluation.score}/100",
+            Text(evaluation.verdict, style=styles[evaluation.verdict]),
+        )
+    if result["offers"]:
+        console.print(table)
+    for offer in result["offers"]:
+        evaluation = result["evaluations"].get(offer.id)
+        if evaluation is not None:
+            reasons = Text("Klíčové důvody\n", style="bold")
+            for reason in evaluation.fit_reasons:
+                reasons.append(f"• {reason}\n", style="default")
+            console.print(Panel(reasons, title=Text(offer.title),
+                                border_style=styles[evaluation.verdict]))
+    console.print(f"Vyhodnoceno: {len(result['evaluations'])}; uloženo do Turso: {len(result['saved_ids'])}.")
+    for error in result["errors"]:
+        console.print(Text(error, style="red"))
+    return 1 if result["errors"] else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
