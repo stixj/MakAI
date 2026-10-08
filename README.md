@@ -179,3 +179,11 @@ Integrace vychází z [Google Gen AI SDK](https://googleapis.github.io/python-ge
 a [Psycopg transakcí](https://www.psycopg.org/psycopg3/docs/basic/transactions.html).
 Aktuální cenu a limity ověř v [Gemini ceníku](https://ai.google.dev/gemini-api/docs/pricing)
 a [OpenAI ceníku](https://developers.openai.com/api/docs/pricing).
+
+
+## Webový přehled (Vite + React)
+
+Samostatný frontend v `frontend/` zobrazuje hodnocení přímo z Turso.
+Používá vizuální tokeny Viatixu a staví se na statické soubory pro Vercel.
+Spuštění, samostatný read-only token a nasazení popisuje
+[frontend/README.md](frontend/README.md). Python backend není součástí webového buildu.

@@ -18,3 +18,8 @@ htmlcov/
 .vscode/
 Thumbs.db
 .DS_Store
+
+# Vite frontend
+node_modules/
+.npm-cache/
+.vercel/

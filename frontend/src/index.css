@@ -1,0 +1,178 @@
+/* Visual tokens copied from Viatix; no application logic is shared. */
+/* Viatix NextGen — brand tokens (Silent Luxury / Authentic Travel) */
+:root {
+  /* ── Primitives ── */
+  --viatix-teal: #005c63;
+  --viatix-teal-mid: #06474d;
+  --viatix-ink: #06282b;
+  --viatix-ink-2: #0c3539;
+  --viatix-mint: #57c7a7;
+  --viatix-mint-soft: #9fd9c8;
+  --viatix-amber: #ffb347;
+  --viatix-amber-hot: #ff8a3d;
+  --viatix-amber-text: #b85e18;
+  --viatix-gold: #e9c46a;
+  --viatix-sand: #f4ede4;
+  --viatix-sand-2: #fbf7f1;
+  --viatix-line: #e0d6c7;
+  --viatix-line-strong: #cfc2ae;
+  --viatix-muted: #5c6b6b;
+
+  --viatix-gradient: linear-gradient(105deg, #ff8a3d, #ffb347 38%, #57c7a7);
+  --viatix-gradient-v: linear-gradient(
+    to bottom,
+    #ff8a3d,
+    #ffb347 48%,
+    #57c7a7
+  );
+
+  /* Deep Ink tinted elevation, not pure black */
+  --viatix-shadow-sm: 0 1px 3px rgba(6, 40, 43, 0.08),
+    0 1px 2px rgba(6, 40, 43, 0.06);
+  --viatix-shadow-md: 0 10px 40px rgba(6, 40, 43, 0.12);
+  --viatix-shadow-lg: 0 20px 50px rgba(6, 40, 43, 0.18);
+  --viatix-shadow-glow-amber: 0 20px 50px rgba(255, 138, 61, 0.35);
+
+  /* ── Semantic aliases — light (default) ── */
+  --brand: var(--viatix-teal);
+  --brand-hover: var(--viatix-teal-mid);
+  --accent: var(--viatix-mint);
+  --accent-warm: var(--viatix-amber);
+
+  --surface-page: var(--viatix-sand);
+  --surface-card: var(--viatix-sand-2);
+  --surface-raised: #ffffff;
+  --border-subtle: var(--viatix-line);
+  --border-strong: #cfc2ae;
+
+  --text-primary: var(--viatix-teal);
+  --text-secondary: var(--viatix-teal-mid);
+  --text-muted: var(--viatix-muted);
+  --text-on-brand: #ffffff;
+}
+
+/* ── Dark mode overrides ── */
+.dark {
+  --surface-page: var(--viatix-ink);
+  --surface-card: var(--viatix-ink-2);
+  --surface-raised: #102f33;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --text-primary: var(--viatix-sand);
+  --text-secondary: var(--viatix-mint-soft);
+  --text-muted: #7e9491;
+  --accent: var(--viatix-mint-soft);
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Warm sand background, Deep Ink foreground (Silent Luxury) */
+    --background: 36 33% 93%;
+    --foreground: 184 64% 11%;
+    --card: 36 38% 98%;
+    --card-foreground: 184 64% 11%;
+    --primary: 184 100% 19%;
+    --primary-foreground: 36 38% 98%;
+    --secondary: 36 25% 92%;
+    --secondary-foreground: 184 64% 11%;
+    --muted: 36 20% 88%;
+    --muted-foreground: 184 9% 39%;
+    --accent: 158 50% 56%;
+    --accent-foreground: 184 64% 11%;
+    --accent-orange: 21 100% 62%;
+    --accent-coral: 36 100% 63%;
+    --border: 36 32% 84%;
+    --ring: 184 100% 19%;
+  }
+
+  .dark {
+    /* Deep Ink chrome, mint accents (no generic gray/slate) */
+    --background: 184 64% 11%;
+    --foreground: 36 33% 93%;
+    --card: 184 56% 14%;
+    --card-foreground: 36 33% 93%;
+    --primary: 158 50% 56%;
+    --primary-foreground: 184 64% 11%;
+    --secondary: 184 40% 18%;
+    --secondary-foreground: 36 33% 93%;
+    --muted: 184 30% 20%;
+    --muted-foreground: 158 20% 70%;
+    --accent: 152 41% 73%;
+    --accent-foreground: 184 64% 11%;
+    --accent-orange: 21 100% 62%;
+    --accent-coral: 36 100% 63%;
+    --border: 184 30% 22%;
+    --ring: 158 50% 56%;
+  }
+
+  html,
+  body {
+    font-family:
+      "Inter",
+      system-ui,
+      -apple-system,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background-color: var(--viatix-sand);
+    color: var(--viatix-ink);
+  }
+
+  .dark body {
+    background-color: var(--viatix-ink);
+    color: var(--viatix-sand);
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #e2e8f0;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+
+  /* Global keyboard-navigation focus ring — :focus-visible only, no mouse-click noise */
+  :where(
+      a,
+      button,
+      input,
+      textarea,
+      select,
+      summary,
+      [role="button"],
+      [tabindex]:not([tabindex="-1"])
+    ):focus-visible {
+    outline: 3px solid var(--viatix-mint);
+    outline-offset: 3px;
+  }
+}
+
+
+@layer base {
+  body { margin: 0; min-width: 320px; }
+  #root { min-height: 100vh; }
+  ::selection { background: var(--viatix-mint-soft); color: var(--viatix-ink); }
+}
+
+@layer components {
+  .button-primary { @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-viatix-teal px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#06474d] disabled:cursor-wait disabled:opacity-60; }
+  .button-secondary { @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-viatix-line bg-viatix-sand2 px-4 py-2.5 text-sm font-medium text-viatix-teal transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60; }
+  .job-card { @apply flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card transition-all duration-200; }
+  .job-card:hover { @apply -translate-y-0.5 shadow-card-hover; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .job-card:hover { transform: none; }
+}
