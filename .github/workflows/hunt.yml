@@ -19,7 +19,6 @@ jobs:
     env:
       MAKAI_URL: ${{ vars.MAKAI_URL }}
       MAKAI_WORKER_SECRET: ${{ secrets.MAKAI_WORKER_SECRET }}
-      RUN_FILE: ${{ runner.temp }}/makai-run.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,13 +26,13 @@ jobs:
           python-version: '3.12'
       - name: Check saved schedule and manual queue
         id: claim
-        run: python backend/cloud_worker.py claim --file "$RUN_FILE"
+        run: python backend/cloud_worker.py claim --file "$RUNNER_TEMP/makai-run.json"
       - name: Install worker dependencies
         if: steps.claim.outputs.pending == 'true'
         run: pip install -r backend/requirements.txt
       - name: Search and save results
         if: steps.claim.outputs.pending == 'true'
-        run: python backend/cloud_worker.py run --file "$RUN_FILE"
+        run: python backend/cloud_worker.py run --file "$RUNNER_TEMP/makai-run.json"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
@@ -42,4 +41,4 @@ jobs:
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'auto' }}
       - name: Remove temporary profile snapshot
         if: always()
-        run: rm -f -- "$RUN_FILE"
+        run: rm -f -- "$RUNNER_TEMP/makai-run.json"
