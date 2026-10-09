@@ -6,7 +6,7 @@ from app.config import get_settings
 from app.hunt_filters import HuntSelection
 from app.history import history_page
 from app.profile_builder import builder_config, generate_profile, ProfileGenerationError
-from app.evaluator import evaluation_context
+from app.evaluator import evaluation_context, evaluate_job
 from app.graph import build_graph
 from app.profile_registry import (get_profile, profile_directory, profile_payload, reset_profile,
                                   result_rows, selected_id, upload_profile)
@@ -40,8 +40,17 @@ def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
             raise ValueError("Výchozí profil vyžaduje nakonfigurované Turso.")
         store.check_connection()
     previous = result_rows(profile_id) if not remote else []
+    manual_urls, manual_ids = set(), set()
     if remote:
         known_urls, known_ids = store.known_offer_identities()
+        if hasattr(store, "manual_offer_identities"):
+            manual_urls, manual_ids = store.manual_offer_identities()
+            if hasattr(store, "edited_offer_identities"):
+                edited_urls, edited_ids = store.edited_offer_identities()
+                manual_urls.update(edited_urls)
+                manual_ids.update(edited_ids)
+            known_urls.update(manual_urls)
+            known_ids.update(manual_ids)
     else:
         known = [json.loads(row["offer"]) for row in previous]
         known_urls = {offer["url"] for offer in known}
@@ -74,7 +83,11 @@ def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
     # Keep local history and avoid repeated paid evaluations for the same candidate.
     previous_urls = {json.loads(row["offer"])["url"] for row in previous}
     if remote:
+        from app.scrapers.structured import clean_url
+        clean_manual_urls = {clean_url(url) for url in manual_urls}
         for offer in selection.known_matches:
+            if offer.canonical_id in manual_ids or clean_url(str(offer.url)) in clean_manual_urls:
+                continue
             store.upsert_or_enrich_job(offer)
     with evaluation_context(profile, personal_history=personal):
         result = build_graph(settings=settings, store=store,
@@ -128,7 +141,16 @@ def main() -> int:
             if not settings.database_url or not settings.turso_auth_token:
                 raise ValueError("Chybí připojení k Turso pro online hledání.")
             store = ProfileTursoStore(settings.database_url.get_secret_value(), settings.turso_auth_token.get_secret_value(), profile_id)
-            output = hunt({**payload["options"], "profileId": profile_id}, profile_override=parse_candidate_profile(content), store_override=store)
+            profile = parse_candidate_profile(content)
+            if payload["options"].get("evaluationOffer"):
+                from app.schemas import JobOffer
+                offer = JobOffer.model_validate(payload["options"]["evaluationOffer"])
+                with evaluation_context(profile, personal_history=False):
+                    evaluation = evaluate_job(offer)
+                output = {"found": 1, "evaluated": 1, "saved": 1, "errors": [],
+                          "evaluation": evaluation.model_dump(mode="json")}
+            else:
+                output = hunt({**payload["options"], "profileId": profile_id}, profile_override=profile, store_override=store)
         else:
             raise ValueError("Neznámá akce.")
         print(json.dumps(output, ensure_ascii=False))

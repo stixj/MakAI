@@ -1,3 +1,6 @@
+import OfferEditor from './components/OfferEditor.jsx';
+import ApplicationsPanel from './components/ApplicationsPanel.jsx';
+import AddOfferPanel from './components/AddOfferPanel.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Briefcase, RefreshCw, Search, X } from 'lucide-react';
 import JobCard from './components/JobCard.jsx';
@@ -22,6 +25,10 @@ export function Dashboard({ accountControls }) {
   const shared = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
   const local = ['local', 'cloud'].includes(import.meta.env.VITE_JOB_SOURCE);
   const [collection, setCollection] = useState('active');
+  const [section, setSection] = useState('offers');
+  const [adding, setAdding] = useState(false);
+  const [editingOffer,setEditingOffer]=useState(null);
+  const [selectedOffer, setSelectedOffer] = useState(null);
   const [lastAction, setLastAction] = useState(null);
   const [undoBusy, setUndoBusy] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -50,7 +57,7 @@ export function Dashboard({ accountControls }) {
   const loadedRevision = useRef(-1);
 
   useEffect(() => {
-    setNewOnly(false); setPage(1); setLastAction(null); setActionError('');
+    setNewOnly(false); setPage(1); setLastAction(null); setActionError(''); setAdding(false); setSelectedOffer(null);setEditingOffer(null);
     try { const value = localStorage.getItem('makai-last-visit:' + profileId); setPreviousVisit(value && Number.isFinite(Date.parse(value)) ? value : null); }
     catch { setPreviousVisit(null); }
   }, [profileId]);
@@ -120,6 +127,24 @@ export function Dashboard({ accountControls }) {
     finally { setUndoBusy(false); }
   }
 
+  async function evaluateOffer(job) {
+    const result = await profileApi('/api/applications', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'evaluate',profileId,offerId:job.id})});
+    setReloadKey(value=>value+1); return result;
+  }
+  async function saveDescription(job,raw_description) {
+    await profileApi('/api/applications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'description',profileId,offerId:job.id,raw_description})});
+    setReloadKey(value=>value+1);
+  }
+  async function openDuplicate(id) {
+    const selected=profileId;
+    try {
+      const detail=await profileApi('/api/applications?offerId='+encodeURIComponent(id));
+      if(currentProfile.current!==selected)return;
+      setAdding(false);setSection('offers');setCollection('all');resetFilters();
+      setSearch(detail.offer.title);setReloadKey(value=>value+1);
+    } catch(failure) {setActionError(failure.message);}
+  }
+  function openApplication(id) {setSection('applications');setSelectedOffer(id);setAdding(false);}
   async function showDemo() {
     const current = ++requestId.current;
     const { demoJobs } = await import('./lib/demo.js');
@@ -134,7 +159,7 @@ export function Dashboard({ accountControls }) {
   const view = local && !demo && pageResult ? { ...pageResult, jobs } : clientView;
   const visible = view.jobs;
   const counts = local && !demo && pageResult ? pageResult.counts
-    : Object.fromEntries(Object.keys(VERDICTS).map(key => [key, jobs.filter(job => job.evaluation.verdict === key).length]));
+    : Object.fromEntries(Object.keys(VERDICTS).map(key => [key, jobs.filter(job => job.evaluation?.verdict === key).length]));
   const totalStored = pageResult?.totalStored ?? jobs.length;
   const totalAll = local && !demo && pageResult ? pageResult.totalAll : jobs.length;
   const resetFilters = () => { setSearch(''); setVerdict('all'); setHistoryPeriod('all'); setNewOnly(false); setPage(1); };
@@ -187,9 +212,18 @@ export function Dashboard({ accountControls }) {
         <button type="button" className="inline-flex items-center gap-1 rounded-lg p-1 font-semibold text-viatix-teal" onClick={refresh}><X className="h-3.5 w-3.5" aria-hidden="true" />Zavřít ukázku</button>
       </div>}
 
-      {shared && !demo && <nav aria-label="Moje nabídky" className="mt-6 flex flex-wrap gap-2">
-        {Object.entries(COLLECTIONS).map(([key, label]) => <button type="button" key={key} aria-pressed={collection === key} onClick={() => { changeFilter(setCollection, key); resetFilters(); }} className={collection === key ? 'button-primary' : 'button-secondary'}>{label}</button>)}
+      {shared && !demo && <nav aria-label="Hlavní sekce" className="mt-6 flex flex-wrap items-center gap-2">
+        <button type="button" aria-pressed={section==='offers'} className={section==='offers'?'button-primary':'button-secondary'} onClick={()=>setSection('offers')}>Nabídky</button>
+        <button type="button" aria-pressed={section==='applications'} className={section==='applications'?'button-primary':'button-secondary'} onClick={()=>setSection('applications')}>Moje přihlášky</button>
+        <button type="button" className="button-secondary sm:ml-auto" disabled={!profileId} onClick={()=>setAdding(value=>!value)}>Přidat nabídku</button>
       </nav>}
+      {editingOffer && profileId && section==='offers' && <OfferEditor key={profileId+editingOffer} profileId={profileId} offerId={editingOffer} onClose={()=>setEditingOffer(null)} onSaved={()=>setReloadKey(value=>value+1)} />}
+      {adding && profileId && <AddOfferPanel key={profileId} profileId={profileId} onClose={()=>setAdding(false)} onAdded={(result,applied)=>{setAdding(false);setReloadKey(value=>value+1);if(applied)openApplication(result.offerId);else{setSection('offers');setCollection('saved');resetFilters();}}} onDuplicate={openDuplicate} />}
+      {shared && !demo && section==='applications' && profileId && <ApplicationsPanel profileId={profileId} reloadKey={reloadKey} selectedOffer={selectedOffer} onSelected={setSelectedOffer} onChanged={()=>setReloadKey(value=>value+1)} />}
+      {(section==='offers' || demo) && <>
+      {shared && !demo && <div aria-label="Filtry nabídek" className="mt-5 flex flex-wrap gap-2">
+        {[['active','Všechny nabídky'],['saved','Uložené'],['hidden','Skryté']].map(([key,label])=><button type="button" key={key} aria-pressed={collection===key} className={collection===key?'button-primary':'button-secondary'} onClick={()=>{changeFilter(setCollection,key);resetFilters();}}>{label}</button>)}
+      </div>}
       {lastAction && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-viatix-line bg-viatix-sand2 p-3">
         <p role="status" className="text-sm">{lastAction.message}</p>
         <button type="button" className="button-secondary" ref={undoButton} disabled={undoBusy} onClick={undoAction}>{undoBusy ? 'Vracím změnu…' : 'Vrátit změnu'}</button>
@@ -197,7 +231,7 @@ export function Dashboard({ accountControls }) {
       {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
 
       {status === 'ready' && <section aria-label="Přehled hodnocení" className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[['all', 'Vyhodnoceno', totalAll], ...Object.entries(VERDICTS).map(([key, value]) => [key, value.title, counts[key]])].map(([key, title, count]) => <button type="button" key={key} aria-pressed={verdict === key} onClick={() => changeFilter(setVerdict, key)} className={'rounded-2xl border p-4 text-left transition-colors ' + (verdict === key ? 'border-viatix-teal bg-viatix-teal text-white' : 'border-viatix-line/60 bg-viatix-sand2 hover:border-viatix-teal/50')}>
+        {[['all', 'Celkem nabídek', totalAll], ...Object.entries(VERDICTS).map(([key, value]) => [key, value.title, counts[key]])].map(([key, title, count]) => <button type="button" key={key} aria-pressed={verdict === key} onClick={() => changeFilter(setVerdict, key)} className={'rounded-2xl border p-4 text-left transition-colors ' + (verdict === key ? 'border-viatix-teal bg-viatix-teal text-white' : 'border-viatix-line/60 bg-viatix-sand2 hover:border-viatix-teal/50')}>
           <span className={'text-xs ' + (verdict === key ? 'text-white/80' : 'text-muted-foreground')}>{title}</span>
           <span className="mt-2 block font-display text-2xl font-semibold tabular-nums">{count}</span>
         </button>)}
@@ -212,15 +246,15 @@ export function Dashboard({ accountControls }) {
             <label className="flex items-center gap-2 text-xs">Na stránce
               <select aria-label="Počet nabídek na stránce" value={pageSize} onChange={event => changeFilter(setPageSize, Number(event.target.value))} className="rounded-2xl border border-viatix-line bg-viatix-sand2 px-3 py-3 text-sm">{[6, 12, 24, 48].map(size => <option key={size} value={size}>{size}</option>)}</select>
             </label>
-            <label className="flex items-center gap-2 text-xs">Vyhodnoceno
-              <select aria-label="Období vyhodnocení v historii" value={historyPeriod} onChange={event => changeFilter(setHistoryPeriod, event.target.value)} className="rounded-2xl border border-viatix-line bg-viatix-sand2 px-3 py-3 text-sm">
+            <label className="flex items-center gap-2 text-xs">Přidáno / vyhodnoceno
+              <select aria-label="Období nabídek v historii" value={historyPeriod} onChange={event => changeFilter(setHistoryPeriod, event.target.value)} className="rounded-2xl border border-viatix-line bg-viatix-sand2 px-3 py-3 text-sm">
                 <option value="all">Celá historie</option><option value="24h">Posledních 24 hodin</option><option value="7d">Posledních 7 dní</option><option value="30d">Posledních 30 dní</option>
               </select>
             </label>
             <label className="relative flex-1"><span className="sr-only">Hledat pozici nebo společnost</span><Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <input type="search" maxLength={200} value={search} onChange={event => changeFilter(setSearch, event.target.value)} placeholder="Hledat pozici nebo společnost…" className="w-full rounded-2xl border border-viatix-line bg-viatix-sand2 py-3 pl-11 pr-4 text-sm placeholder:text-muted-foreground" />
             </label>
-            <label><span className="sr-only">Řadit nabídky</span><select value={sort} onChange={event => changeFilter(setSort, event.target.value)} className="w-full rounded-2xl border border-viatix-line bg-viatix-sand2 px-4 py-3 text-sm sm:w-auto"><option value="score">Nejvyšší shoda</option><option value="newest">Nejnovější hodnocení</option></select></label>
+            <label><span className="sr-only">Řadit nabídky</span><select value={sort} onChange={event => changeFilter(setSort, event.target.value)} className="w-full rounded-2xl border border-viatix-line bg-viatix-sand2 px-4 py-3 text-sm sm:w-auto"><option value="score">Nejvyšší shoda</option><option value="newest">Nejnovější nabídky</option></select></label>
           </div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <p role="status">{view.total ? (view.page - 1) * view.pageSize + 1 : 0}–{Math.min(view.page * view.pageSize, view.total)} z {view.total} odpovídajících nabídek</p>
@@ -230,7 +264,7 @@ export function Dashboard({ accountControls }) {
           {limitReached && <p className="mb-4 text-xs text-muted-foreground">Přímé připojení načítá posledních 500 hodnocení.</p>}
           {loadingResults && <p role="status" className="mb-3 text-xs text-viatix-teal">Načítám stránku nabídek…</p>}
           {view.total > 0 && <div className="mb-5"><Pagination /></div>}
-          {visible.length > 0 ? <div className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3">{visible.map(job => <JobCard key={profileId + ':' + job.id} job={job} onStateChange={shared && !demo && profileId ? changeJobState : undefined} actionsDisabled={undoBusy || loadingResults} />)}</div> :
+          {visible.length > 0 ? <div className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3">{visible.map(job => <JobCard key={profileId + ':' + job.id} job={job} onStateChange={shared && !demo && profileId ? changeJobState : undefined} actionsDisabled={undoBusy || loadingResults} onDetail={openApplication} onEvaluate={shared ? evaluateOffer : undefined} onEdit={shared ? setEditingOffer : undefined} />)}</div> :
             <EmptyState title={totalAll ? 'Žádná nabídka neodpovídá filtrům' : collection === 'saved' ? 'Zatím nemáš uložené nabídky' : collection === 'applied' ? 'Zatím nemáš označené reakce' : collection === 'hidden' ? 'Zatím nemáš skryté nabídky' : totalStored ? 'Všechny nabídky jsou skryté' : 'První příležitost teprve přijde'} action={totalAll ? <button type="button" className="button-secondary" onClick={resetFilters}>Zrušit filtry</button> : totalStored && collection === 'active' ? <button type="button" className="button-secondary" onClick={() => changeFilter(setCollection, 'hidden')}>Prohlédnout skryté nabídky</button> : collection !== 'active' ? <button type="button" className="button-secondary" onClick={() => { changeFilter(setCollection, 'active'); resetFilters(); }}>Prohlédnout nabídky</button> : null}>
               {totalAll ? 'Zkus jiný název pozice nebo zobraz všechna hodnocení.' : collection === 'saved' ? 'Zajímavou nabídku si odlož tlačítkem Uložit.' : collection === 'applied' ? 'Po odeslání přihlášky označ nabídku tlačítkem Reagoval jsem.' : collection === 'hidden' ? 'Skryté nabídky najdeš tady a můžeš je kdykoliv znovu zobrazit.' : totalStored ? 'Nabídky zůstávají uložené v sekci Skryté. Můžeš je kdykoliv vrátit.' : 'Vytvoř profil a spusť první hledání. Vyhodnocené nabídky se potom objeví tady.'}
             </EmptyState>}
@@ -246,6 +280,7 @@ export function Dashboard({ accountControls }) {
           <p>Zdroj nabídek zatím není připojený. Mezitím si můžeš prohlédnout vzhled karet na smyšlených datech.</p>
         </EmptyState>}
       </section>
+      </>}
       <footer className="mt-10 flex flex-col justify-between gap-3 border-t border-viatix-line/60 pt-5 text-[11px] leading-relaxed text-muted-foreground sm:flex-row">
         <span>MakAI · Další krok s lepším přehledem.</span>
         <span>Skóre vyjadřuje shodu s profilem, nikoli pravděpodobnost přijetí.</span>

@@ -1,3 +1,4 @@
+import { opportunityRequest, opportunityHistory } from './opportunityApi.js';
 import { builderConfig, analyseCv, generateDraft } from './profileBuilder.js';
 import { createClient } from '@libsql/client/http';
 import { createHash } from 'node:crypto';
@@ -97,6 +98,7 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         if (Number(quota.rows[0].count) > 20) return send(429, { error: 'Dnešní limit tvorby profilu byl dosažen. Pokračuj zítra.' });
         return send(200, await (route === 'profile-cv' ? analyseCv(payload, env, fetcher) : generateDraft(payload, env, fetcher)));
       }
+      if (route === 'applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher) }));
       if (route === 'profile') {
         if (request.method === 'GET') return send(200, new URL(request.url, 'https://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
         if (request.method === 'PUT') return send(200, await store.activateProfile((await readBody(request)).id));
@@ -122,13 +124,7 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         if (request.method !== 'GET') return send(405, { error: 'Nepodporovaná metoda.' });
         const query = historyQuery(request.url);
         if (!query) throw new UserError('Použij stránkovaný přehled.');
-        const profile = await store.profile();
-        const empty = () => ({ rows: [], ...historyView([], query) });
-        if (!profile) return send(200, empty());
-        const table = profileTable(profile.id);
-        const exists = await client.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] });
-        if (!exists.rows.length) return send(200, empty());
-        return send(200, await readHistoryPage({ execute: stmt => client.execute({ ...stmt, sql: stmt.sql.replaceAll('makai_job_evaluations', table) }) }, query, await store.jobStates(profile.id)));
+        return send(200, await opportunityHistory(store, query));
       }
       return send(404, { error: 'Neznámá cesta.' });
     } catch (error) {

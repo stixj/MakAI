@@ -1,3 +1,4 @@
+import { opportunityRequest, opportunityHistory } from './opportunityApi.js';
 import { createClient } from '@libsql/client/http';
 import { CloudStore, UserError } from './cloudStore.js';
 import { profileTable } from './cloudProfile.js';
@@ -19,7 +20,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
     })().catch(error => { ready = null; throw error; });
     return ready;
   }
-  const routes = new Set(['/api/profile', '/api/jobs', '/api/schedule', '/api/hunt']);
+  const routes = new Set(['/api/profile', '/api/jobs', '/api/schedule', '/api/hunt', '/api/applications']);
   const middleware = async (request, response, next) => {
     const route = request.url?.split('?')[0];
     if (!routes.has(route)) return next();
@@ -28,6 +29,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
     if (!localRequest(request)) return send(403, { error: 'Přístup je povolen pouze z localhostu.' });
     try {
       const store = await storage();
+      if (route === '/api/applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher) }));
       if (route === '/api/profile') {
         if (request.method === 'GET') return send(200, new URL(request.url, 'http://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
         if (request.method === 'POST') return send(200, await store.saveProfile(await readBody(request)));
@@ -49,13 +51,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
       if (route === '/api/jobs' && request.method === 'GET') {
         const query = historyQuery(request.url);
         if (!query) throw new UserError('Použij stránkovaný přehled.');
-        const profile = await store.profile();
-        const empty = () => ({ rows: [], ...historyView([], query) });
-        if (!profile) return send(200, empty());
-        const table = profileTable(profile.id);
-        const exists = await client.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] });
-        if (!exists.rows.length) return send(200, empty());
-        return send(200, await readHistoryPage({ execute: stmt => client.execute({ ...stmt, sql: stmt.sql.replaceAll('makai_job_evaluations', table) }) }, query, await store.jobStates(profile.id)));
+        return send(200, await opportunityHistory(store, query));
       }
       return send(405, { error: 'Nepodporovaná metoda.' });
     } catch (error) {

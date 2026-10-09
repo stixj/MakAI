@@ -1,4 +1,6 @@
 import { normalizeJobState } from '../src/lib/jobState.js';
+import { applicationTables, offerRow, appliedStateChanged, assertActive } from './applicationStore.js';
+import { parseJobRow } from '../src/lib/jobs.js';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_SCHEDULE, validateSchedule, validateHunt, nextOccurrence, clockParts } from '../src/lib/schedule.js';
 import { parseCloudProfile, profileTable } from './cloudProfile.js';
@@ -16,6 +18,7 @@ export class CloudStore {
   constructor(client, { now = () => new Date() } = {}) { this.client = client; this.now = now; }
   async initialize() {
     await this.client.batch([
+      ...applicationTables,
       'CREATE TABLE IF NOT EXISTS makai_control (id INTEGER PRIMARY KEY CHECK(id=1), schedule TEXT NOT NULL, next_at TEXT, profile_id TEXT, revision INTEGER NOT NULL DEFAULT 0, worker_seen_at TEXT)',
       'CREATE TABLE IF NOT EXISTS makai_profiles (id TEXT PRIMARY KEY, payload TEXT NOT NULL)',
       'CREATE TABLE IF NOT EXISTS makai_runs (id TEXT PRIMARY KEY, status TEXT NOT NULL, source TEXT NOT NULL, profile_id TEXT NOT NULL, options TEXT NOT NULL, created_at TEXT NOT NULL, scheduled_at TEXT, slot TEXT UNIQUE, started_at TEXT, finished_at TEXT, lease_until TEXT, lease_token TEXT, result TEXT, error TEXT)',
@@ -65,10 +68,8 @@ export class CloudStore {
     return this.transaction(async tx => {
       const control = await this.control(tx);
       if (control.profile_id !== input.profileId) throw new UserError('Aktivní profil se změnil. Obnov přehled.', 409);
-      const table = profileTable(input.profileId);
-      const exists = await tx.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] });
-      if (!exists.rows.length || !(await tx.execute({ sql: `SELECT offer_id FROM ${table} WHERE offer_id=?`, args: [input.offerId] })).rows.length)
-        throw new UserError('Nabídka nebyla nalezena.', 404);
+      await offerRow(tx, input.profileId, input.offerId);
+      if (keys.includes('applied')) await appliedStateChanged(this, tx, input.profileId, input.offerId, input.changes.applied);
       await tx.execute({ sql: `INSERT INTO makai_job_states(profile_id,offer_id,saved,applied,hidden,updated_at)
         VALUES(?,?,?,?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET ${keys.map(key => key + '=excluded.' + key).join(',')}, updated_at=excluded.updated_at`,
         args: [input.profileId, input.offerId, Number(input.changes.saved || false), Number(input.changes.applied || false), Number(input.changes.hidden || false), this.now().toISOString()] });
@@ -130,7 +131,7 @@ export class CloudStore {
     await this.expire(this.client);
     return (await this.client.execute('SELECT * FROM makai_runs ORDER BY created_at DESC, rowid DESC LIMIT 30')).rows.map(runView);
   }
-  async queue(db, options, source, scheduledAt = null, slot = null) {
+  async queue(db, options, source, scheduledAt = null, slot = null, evaluationOffer = null, evaluationOfferRevision = 0) {
     const control = await this.control(db);
     if (!control.profile_id) throw new UserError('Nejdřív nahraj nebo vytvoř profil.');
     if (options.profileId && options.profileId !== control.profile_id) throw new UserError('Aktivní profil se změnil. Obnov stránku.', 409);
@@ -142,8 +143,20 @@ export class CloudStore {
       throw new UserError('Dnešní limit spuštění je vyčerpaný. Uprav jej v nastavení automatiky.', 429);
     const id = randomUUID();
     await db.execute({ sql: "INSERT INTO makai_runs(id,status,source,profile_id,options,created_at,scheduled_at,slot) VALUES(?,'queued',?,?,?,?,?,?)",
-      args: [id, source, control.profile_id, json(validateHunt(options)), this.now().toISOString(), scheduledAt, slot] });
+      args: [id, source, control.profile_id, json({ ...validateHunt(options), ...(evaluationOffer ? { evaluationOffer, evaluationOfferRevision } : {}) }), this.now().toISOString(), scheduledAt, slot] });
     return runView((await db.execute({ sql: 'SELECT * FROM makai_runs WHERE id=?', args: [id] })).rows[0]);
+  }
+  async evaluateOffer(input) {
+    return this.transaction(async tx => {
+      await assertActive(this, tx, input?.profileId); await this.expire(tx);
+      const row = await offerRow(tx, input.profileId, input.offerId);
+      if (!row.manual) throw new UserError('Tato nabídka už má hodnocení.');
+      if (row.evaluation) throw new UserError('Nabídka už byla vyhodnocena.',409);
+      const edit = (await tx.execute({sql:'SELECT payload,revision FROM makai_offer_edits WHERE profile_id=? AND offer_id=?',args:[input.profileId,input.offerId]})).rows[0];
+      const offer = {...JSON.parse(row.offer),...(edit?JSON.parse(edit.payload):{})};
+      if (!offer.raw_description.trim()) throw new UserError('Pro AI hodnocení doplň text inzerátu.');
+      return this.queue(tx, { profileId: input.profileId, maxEvaluations: 1 }, 'evaluation', null, null, { ...offer, url: offer.url || 'https://makai.invalid/manual/' + offer.id },Number(edit?.revision||0));
+    });
   }
   async manual(input) { return this.transaction(async tx => { await this.expire(tx); return this.queue(tx, input, 'manual'); }); }
   async stop() {
@@ -190,9 +203,20 @@ export class CloudStore {
         (['done', 'partial', 'blocked'].includes(status) && (!result || !Array.isArray(result.errors) ||
           ['found', 'evaluated', 'saved'].some(key => !Number.isInteger(result[key]) || result[key] < 0))))
       throw new UserError('Neplatný výsledek běhu.');
-    const update = await this.client.execute({ sql: "UPDATE makai_runs SET status=CASE WHEN status='stopping' THEN 'cancelled' ELSE ? END, result=?, error=?, finished_at=? WHERE id=? AND lease_token=? AND status IN ('running','stopping')",
-      args: [status, result ? json(result) : null, status === 'error' ? 'Hledání selhalo. Zkontroluj konfiguraci a stav zpracování.' : null, this.now().toISOString(), id, token] });
-    if (!update.rowsAffected) throw new UserError('Běh již skončil nebo jeho platnost vypršela.', 409);
-    return { saved: true };
+    return this.transaction(async tx => {
+      const run = (await tx.execute({sql:'SELECT * FROM makai_runs WHERE id=? AND lease_token=?',args:[id,token]})).rows[0];
+      if (!run || !['running','stopping'].includes(run.status)) throw new UserError('Běh již skončil nebo jeho platnost vypršela.',409);
+      const options=JSON.parse(run.options);
+      if (options.evaluationOffer && status==='done' && run.status==='running') {
+        const offer=options.evaluationOffer;
+        parseJobRow({offer_id:offer.id,offer:JSON.stringify(offer),evaluation:JSON.stringify(result.evaluation),evaluated_at:this.now().toISOString()});
+        const update=await tx.execute({sql:'UPDATE makai_manual_offers SET evaluation=?,evaluated_at=? WHERE profile_id=? AND offer_id=? AND evaluation IS NULL',args:[JSON.stringify(result.evaluation),this.now().toISOString(),run.profile_id,offer.id]});
+        if (!update.rowsAffected) throw new UserError('Nabídka už byla změněna.',409);
+        await tx.execute({sql:'INSERT INTO makai_offer_evaluation_versions(profile_id,offer_id,offer_revision) VALUES(?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET offer_revision=excluded.offer_revision',args:[run.profile_id,offer.id,Number(options.evaluationOfferRevision||0)]});
+      }
+      await tx.execute({ sql: "UPDATE makai_runs SET status=CASE WHEN status='stopping' THEN 'cancelled' ELSE ? END, result=?, error=?, finished_at=? WHERE id=? AND lease_token=?",
+        args: [status, result ? json(result) : null, status === 'error' ? 'Zpracování selhalo. Zkontroluj konfiguraci a stav zpracování.' : null, this.now().toISOString(), id, token] });
+      return {saved:true};
+    });
   }
 }
