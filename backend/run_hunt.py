@@ -12,12 +12,14 @@ from rich.text import Text
 if __package__:
     from .app.config import get_settings
     from .app.graph import build_graph
+    from .app.scrapers import SCRAPERS
     from .app.scrapers.startupjobs import ScraperError, fetch_startupjobs
     from .app.storage import create_store
     from .app.turso import StorageConfigurationError, TursoEvaluationStore
 else:
     from app.config import get_settings
     from app.graph import build_graph
+    from app.scrapers import SCRAPERS
     from app.scrapers.startupjobs import ScraperError, fetch_startupjobs
     from app.storage import create_store
     from app.turso import StorageConfigurationError, TursoEvaluationStore
@@ -31,8 +33,10 @@ def _limit(value: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="MakAI: StartupJobs → Turso → LangGraph → Turso")
-    parser.add_argument("--limit", type=_limit, default=15, help="Maximální počet nabídek (1–100)")
+    parser = argparse.ArgumentParser(description="MakAI: české portály, deduplikace, obohacení a LLM evaluace")
+    parser.add_argument("--limit", type=_limit, default=15, help="Maximální počet nabídek na portál (1–100)")
+    parser.add_argument("--portals", nargs="+", choices=[*SCRAPERS, "all"], default=["startupjobs"],
+                        help="Zdroje nabídek; all vybere všechny portály")
     args = parser.parse_args(argv)
     console = Console()
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
@@ -42,11 +46,21 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(store, TursoEvaluationStore):
             raise StorageConfigurationError("Lov vyžaduje Turso: nastav DATABASE_URL a TURSO_AUTH_TOKEN.")
         store.check_connection()
-        console.print("[bold cyan]MakAI – lov na StartupJobs[/]")
-        offers = fetch_startupjobs(args.limit)
+        portals = list(SCRAPERS) if "all" in args.portals else list(dict.fromkeys(args.portals))
+        console.print(Text("MakAI – lov: " + ", ".join(portals), style="bold cyan"))
+        offers = []
+        source_errors = []
+        for portal in portals:
+            try:
+                found = (fetch_startupjobs(args.limit) if portal == "startupjobs"
+                         else SCRAPERS[portal]().fetch_jobs(args.limit))
+                offers.extend(found)
+                console.print(Text(f"{portal}: {len(found)} nabídek."))
+            except ScraperError as exc:
+                source_errors.append(str(exc))
         console.print(f"Nalezeno: {len(offers)} nabídek.")
         result = build_graph(settings=settings, store=store).invoke(
-            {"offers": offers, "evaluations": {}, "errors": []}
+            {"offers": offers, "evaluations": {}, "errors": source_errors}
         )
     except (StorageConfigurationError, ScraperError) as exc:
         console.print(Text(str(exc), style="red"))
@@ -59,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     console.print(f"Přeskočeno duplicit: {len(result['skipped_duplicates'])}.")
+    console.print(f"Obohaceno uložených nabídek: {len(result.get('enriched_ids', []))}.")
     table = Table(title="Vyhodnocení nových nabídek")
     for heading in ("Pozice", "Firma", "Skóre", "Verdikt"):
         table.add_column(heading)

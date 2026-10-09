@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decodeJobRows, filterJobs, parseJobRow, safeOfferUrl, formatDate } from './jobs.js';
+import { decodeJobRows, filterJobs, getOfferSources, parseJobRow, safeOfferUrl, formatDate } from './jobs.js';
 import { loadJobs, getTursoConfig } from './turso.js';
 
 const config = { url: 'libsql://test.turso.io', authToken: 'test-only-token' };
@@ -37,6 +37,49 @@ test('search ignores Czech accents, combines with verdict, and preserves origina
 test('formats SQLite UTC timestamps and handles invalid dates', () => {
   assert.equal(formatDate('2026-01-01 23:30:00'), formatDate('2026-01-02T00:30:00+01:00'));
   assert.equal(formatDate('bad-date'), 'Datum neuvedeno');
+});
+
+test('portal links accept arrays or JSON and keep one valid link per portal', () => {
+  const sources = [
+    { portal: ' Jobs.cz ', url: 'https://www.jobs.cz/rpd/123/' },
+    { portal: 'jobs.cz', url: 'https://www.jobs.cz/rpd/456/' },
+    { portal: 'Prace.cz', url: 'https://www.prace.cz/nabidka/123/' },
+    { portal: 'Unsafe', url: 'javascript:alert(1)' },
+    { portal: 'Credentialed', url: 'https://user:password@example.com' },
+    null, {},
+  ];
+  const expected = [
+    { portal: 'Jobs.cz', url: 'https://www.jobs.cz/rpd/123/' },
+    { portal: 'Prace.cz', url: 'https://www.prace.cz/nabidka/123/' },
+  ];
+  for (const value of [sources, JSON.stringify(sources)]) {
+    assert.deepEqual(getOfferSources({ sources: value, url: 'https://example.com/job' }), expected);
+  }
+});
+
+test('missing, empty or malformed sources fall back to the original safe URL', () => {
+  for (const sources of [undefined, null, [], '', 'invalid JSON', 'null', '{}', 123,
+    [{ portal: 'Jobs.cz', url: 'javascript:alert(1)' }]]) {
+    assert.deepEqual(getOfferSources({ sources, url: 'https://www.jobs.cz/rpd/123/' }),
+      [{ portal: 'jobs.cz', url: 'https://www.jobs.cz/rpd/123/' }]);
+  }
+  assert.deepEqual(getOfferSources({ url: 'javascript:alert(1)' }), []);
+  assert.deepEqual(getOfferSources({ sources: '{"portal":"Jobs.cz","url":"https://www.jobs.cz/rpd/123/"}' }),
+    [{ portal: 'Jobs.cz', url: 'https://www.jobs.cz/rpd/123/' }]);
+});
+
+test('unknown publication dates from the backend remain visible', () => {
+  for (const value of [null, undefined]) {
+    const source = row();
+    source.offer = JSON.stringify({ ...JSON.parse(source.offer), published_at: value });
+    assert.equal(parseJobRow(source).id, 'one');
+    assert.equal(formatDate(value), 'Datum neuvedeno');
+  }
+  for (const value of ['', 'bad-date']) {
+    const source = row();
+    source.offer = JSON.stringify({ ...JSON.parse(source.offer), published_at: value });
+    assert.throws(() => parseJobRow(source));
+  }
 });
 test('configuration is independent of Python environment and validated before requests', async () => {
   assert.deepEqual(getTursoConfig({ DATABASE_URL: 'libsql://backend', TURSO_AUTH_TOKEN: 'private' }), { url: '', authToken: '' });

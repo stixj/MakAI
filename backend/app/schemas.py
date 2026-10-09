@@ -6,8 +6,11 @@ from typing_extensions import NotRequired, TypedDict
 
 from pydantic import (
     AwareDatetime, BaseModel, ConfigDict, Field, HttpUrl,
-    StringConstraints, model_validator,
+    StringConstraints, field_validator, model_validator,
 )
+
+from .utils.fingerprint import generate_canonical_id
+from .utils.sources import merge_sources, source_for_url
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
@@ -20,7 +23,33 @@ class JobOffer(BaseModel):
     company: NonEmptyText
     url: HttpUrl
     raw_description: NonEmptyText = Field(max_length=30_000)
-    published_at: AwareDatetime
+    published_at: AwareDatetime | None = None
+    canonical_id: str = ""
+    sources: list[dict[str, str]] = Field(default_factory=list)
+    salary_raw: NonEmptyText | None = None
+    location: NonEmptyText | None = None
+
+    @field_validator("salary_raw", "location", mode="before")
+    @classmethod
+    def blank_is_unknown(cls, value):
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @model_validator(mode="after")
+    def canonical_identity(self) -> Self:
+        expected = generate_canonical_id(self.company, self.title, self.location or "")
+        if self.canonical_id and self.canonical_id != expected:
+            raise ValueError("canonical_id does not match company, title and location.")
+        object.__setattr__(self, "canonical_id", expected)
+        object.__setattr__(self, "sources", merge_sources(
+            self.sources, [source_for_url(str(self.url))],
+        ))
+        return self
+
+
+class RawJobOffer(JobOffer):
+    """Validated scraper output, before any LLM evaluation."""
 
 
 class JobFitEvaluation(BaseModel):
@@ -55,3 +84,4 @@ class MakAIState(TypedDict):
     errors: list[str]
     skipped_duplicates: NotRequired[list[str]]
     saved_ids: NotRequired[list[str]]
+    enriched_ids: NotRequired[list[str]]

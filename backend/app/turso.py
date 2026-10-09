@@ -2,7 +2,6 @@
 
 import json
 from collections.abc import Mapping, Sequence
-from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -137,83 +136,20 @@ class TursoEvaluationStore:
         raise TursoError("Neplatný výsledek deduplikace Turso.")
 
     def save_evaluated_job(self, offer: JobOffer, evaluation: JobFitEvaluation) -> None:
-        """Save an offer and its evaluation together in the existing transaction."""
-        self.save([offer], {offer.id: evaluation})
+        self.upsert_or_enrich_job(offer, evaluation)
+
+    def find_existing_job(self, offer: JobOffer) -> JobOffer | None:
+        from .db import find_existing_job
+        return find_existing_job(self, offer)
+
+    def upsert_or_enrich_job(self, offer: JobOffer, eval: JobFitEvaluation | None = None) -> None:
+        from .db import upsert_or_enrich_job
+        upsert_or_enrich_job(offer, eval, store=self)
 
     def save(
         self,
         offers: Sequence[JobOffer],
         evaluations: Mapping[str, JobFitEvaluation],
     ) -> None:
-        rows = [offer for offer in offers if offer.id in evaluations]
-        if not rows:
-            return
-        steps: list[dict] = [{"stmt": {"sql": "BEGIN IMMEDIATE", "want_rows": False}}]
-
-        def append_statement(sql: str, args: list[dict] | None = None) -> None:
-            steps.append(
-                {
-                    "condition": {"type": "ok", "step": len(steps) - 1},
-                    "stmt": {"sql": sql, "args": args or [], "want_rows": False},
-                }
-            )
-
-        append_statement("""
-            CREATE TABLE IF NOT EXISTS makai_job_evaluations (
-                offer_id TEXT PRIMARY KEY,
-                offer TEXT NOT NULL,
-                evaluation TEXT NOT NULL,
-                evaluated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        append_statement("""
-            CREATE INDEX IF NOT EXISTS makai_job_url_idx
-            ON makai_job_evaluations (json_extract(offer, '$.url'))
-        """)
-        timestamp = datetime.now(UTC).isoformat()
-        for offer in rows:
-            append_statement(
-                """
-                INSERT INTO makai_job_evaluations (offer_id, offer, evaluation, evaluated_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT (offer_id) DO UPDATE SET
-                    offer = excluded.offer,
-                    evaluation = excluded.evaluation,
-                    evaluated_at = excluded.evaluated_at
-            """,
-                [
-                    {"type": "text", "value": value}
-                    for value in (
-                        offer.id,
-                        offer.model_dump_json(),
-                        evaluations[offer.id].model_dump_json(),
-                        timestamp,
-                    )
-                ],
-            )
-        commit_index = len(steps)
-        append_statement("COMMIT")
-        steps.append(
-            {
-                "condition": {
-                    "type": "and",
-                    "conds": [
-                        {"type": "ok", "step": 0},
-                        {"type": "not", "cond": {"type": "ok", "step": commit_index}},
-                    ],
-                },
-                "stmt": {"sql": "ROLLBACK", "want_rows": False},
-            }
-        )
-        result = self._request({"type": "batch", "batch": {"steps": steps}})
-        successes, errors = result.get("step_results"), result.get("step_errors")
-        if (
-            not isinstance(successes, list)
-            or not isinstance(errors, list)
-            or len(successes) != len(steps)
-            or len(errors) != len(steps)
-            or any(error is not None for error in errors)
-            or not all(isinstance(item, dict) for item in successes[: commit_index + 1])
-            or successes[-1] is not None
-        ):
-            raise TursoError("Uložení do Turso selhalo; úspěšný COMMIT nebyl potvrzen.")
+        from .db import save_evaluations
+        save_evaluations(self, offers, evaluations)

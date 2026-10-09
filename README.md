@@ -1,36 +1,42 @@
 # MakAI
 
 Osobní AI systém pro sémantické hodnocení pracovních nabídek a výběr relevantních
-podkladů pro životopis. Obsahuje sběr reálných nabídek ze StartupJobs, validaci,
-deduplikaci URL v Turso před LLM evaluací a transakční uložení výsledků.
+podkladů pro životopis. Obsahuje sběr reálných nabídek ze StartupJobs, Jobs.cz,
+Prace.cz, JenPrace.cz a Atmoskopu, kanonickou deduplikaci před LLM evaluací,
+slučování zdrojů a doplnění mzdy v Turso.
 `run_hunt.py` používá reálné nabídky; `run_local.py` zachovává dva explicitně
 označené mockové inzeráty. Generování finálního CV patří do dalších etap.
 
 ## Architektura
 
 ```text
-StartupJobs -> JobOffer[] -> ingest -> filter -> deduplicate -> evaluate -> save
+České portály -> RawJobOffer[] -> ingest -> filter -> deduplicate -> evaluate -> save
                                                     |           |         |
                                                   Turso     Gemini /    Turso /
                                                             OpenAI     JSON / PostgreSQL
 ```
 
-- `schemas.py`: Pydantic v2 doménové modely a typovaný stav LangGraphu.
+- `schemas.py`: Pydantic v2 doménové modely, společný `RawJobOffer` a typovaný stav LangGraphu.
+- `utils/fingerprint.py`: deterministické `canonical_id` z firmy, pozice a lokality.
 - `profile.py`: typovaný profil z `candidate_profile.md`, samostatné CV podklady a historie přihlášek.
 - `agent_instructions.md`: pravidla evaluace a budoucího vyhledávání.
 - `config.py`: `.env` v kořeni projektu, validace a přednost proměnných prostředí.
 - `evaluator.py`: JSON schema pro Gemini, `responses.parse` pro OpenAI a lokální
   validace výsledků. Timeout a jediný pokus na poskytovatele omezují opakovaná volání.
 - `graph.py`: kompilovaný `StateGraph`; neplatné nabídky a duplicitní ID zaznamená
-  do `errors`. URL v Turso a opakované URL v batchi přeskočí před LLM.
+  do `errors`. Kanonické duplicity v dávce sloučí před LLM; uložené nabídky
+  obohatí bez další evaluace. Kontroluje také původní URL a URL ve zdrojích.
   Sémantická no-go kritéria posuzuje LLM nad celým kontextem.
 - `scrapers/startupjobs.py`: veřejné vyhledávací API StartupJobs a strukturovaný
   `JobPosting` z detailu nabídky; AI, Python a Vývoj s omezeným stránkováním.
+- `scrapers/base.py`: abstraktní `BaseScraper.fetch_jobs(limit)`; `portals.py`
+  přidává čtyři české portály a `structured.py` společné mapování JobPosting.
+- `db.py`: unikátní kanonický index, migrace starších nabídek a `upsert_or_enrich_job`.
 - `storage.py`: rozhraní `EvaluationStore`, atomický JSON snapshot a transakční
   PostgreSQL upsert; `turso.py` přidává transakční Turso/libSQL přes HTTPS. Žádné připojení k síti při importu modulů.
 - `demo.py`: pevné fixtures pro bezplatný offline smoke test.
 
-Při použití Turso už uložené URL nevyhodnocuje znovu. JSON a PostgreSQL adaptéry
+Při použití Turso už uložené kanonické pozice nevyhodnocuje znovu. JSON a PostgreSQL adaptéry
 zatím nemají trvalou deduplikaci. Při selhání jedné evaluace pokračuje dalšími
 nabídkami a uloží úspěšné výsledky. Chyba uložení
 zachová evaluace ve vráceném stavu. CLI při jakékoli chybě vrátí exit code `1`.
@@ -50,14 +56,23 @@ MakAI/
 │   │   ├── graph.py
 │   │   ├── storage.py
 │   │   ├── turso.py
+│   │   ├── db.py
+│   │   ├── utils/
+│   │   │   ├── fingerprint.py
+│   │   │   └── sources.py
 │   │   ├── scrapers/
+│   │   │   ├── base.py
+│   │   │   ├── structured.py
+│   │   │   ├── portals.py
 │   │   │   └── startupjobs.py
 │   │   └── demo.py
 │   ├── tests/
 │   │   ├── test_evaluator.py
 │   │   ├── test_graph.py
 │   │   ├── test_profile.py
-│   │   └── test_turso.py
+│   │   ├── test_turso.py
+│   │   ├── test_canonical.py
+│   │   └── test_portals.py
 │   ├── run_local.py
 │   ├── run_hunt.py
 │   └── requirements.txt
@@ -167,13 +182,15 @@ TLS, 15sekundový timeout a standardní Python knihovny, bez dalšího nativníh
 Token se neposílá na přesměrované adresy; chyby neobsahují token ani odpovědi serveru.
 
 Tabulka `makai_job_evaluations` vznikne při prvním skutečném uložení. Nabídka a evaluace
-jsou UTF-8 JSON v textových sloupcích, ID je primární klíč. Opakované ID aktualizuje
-řádek. Podmíněný Hrana batch provede BEGIN, vytvoření tabulky, parametrizované upserty
+jsou UTF-8 JSON v textových sloupcích. Původní `offer_id` zůstává primárním klíčem
+kvůli kompatibilitě s přehledem; unikátní index `makai_job_canonical_idx` nad
+`json_extract(offer, '$.canonical_id')` zajišťuje jednu pozici napříč portály.
+Podmíněný Hrana batch provede BEGIN, vytvoření tabulky, parametrizované upserty
 a COMMIT; po selhání následuje ROLLBACK. Kontroluje i SQL chyby v HTTP 200 odpovědi.
 Při chybě sítě může být stav zápisu nejistý; adaptér jej automaticky neopakuje ani
 nepřechází na JSON. Offline demo do Turso nic nezapisuje.
 
-## Lov na StartupJobs
+## Lov na českých portálech
 
 S nastaveným Turso a klíčem k LLM spusť z kořene projektu:
 
@@ -182,31 +199,58 @@ S nastaveným Turso a klíčem k LLM spusť z kořene projektu:
 .\venv\Scripts\python.exe backend/run_hunt.py
 # Malý vzorek pro ověření:
 .\venv\Scripts\python.exe backend/run_hunt.py --limit 3
+# Vybrané portály (limit na každý portál):
+.\venv\Scripts\python.exe backend/run_hunt.py --portals jobs prace jenprace atmoskop --limit 3
+# Všechny zdroje včetně StartupJobs:
+.\venv\Scripts\python.exe backend/run_hunt.py --portals all --limit 3
 ```
 
-Výchozí limit je 15, povolený rozsah 1–100. CLI nejdřív ověří Turso a stáhne
-nabídky. Scraper střídá sekci AI vývojář, Python ve Vývoji a obecný Vývoj;
+Výchozí zdroj je StartupJobs; `--portals` vybírá další adaptéry. Výchozí limit
+je 15 na portál, povolený rozsah 1–100. CLI nejdřív ověří Turso a stáhne
+nabídky. StartupJobs střídá sekci AI vývojář, Python ve Vývoji a obecný Vývoj;
 deduplikuje ID ze zdroje a stránkuje nejvýše deset stránek na vyhledávání.
 Používá `httpx`, vlastní User-Agent, 20sekundový timeout, bez automatického
 opakování požadavků. Detail parsuje přes `beautifulsoup4`, načítá celé znění,
 podmínky a zdrojové datum publikace. Nabídky s prošlou platností nebo HTTP
-404/410 vynechá. Chybějící datum ani popis nevymýšlí; nevalidní detail hlásí.
-Chyba sítě nebo změna formátu výpisu znamená chybu běhu.
+404/410 vynechá. Chybějící popis nevymýšlí; nevalidní detail hlásí.
+Prace.cz a JenPrace.cz používají JSON-LD, Atmoskop vložený detail aplikace a
+Jobs.cz JSON-LD nebo HTML s poli `data-test`. Jobs.cz hledá AI a Python;
+ostatní nové adaptéry používají veřejné výpisy. Pro vlastní filtry lze adaptéru
+předat `listing_urls` na jeho doméně. Stránkování sleduje odkaz `rel="next"`,
+nejvýše deset stránek na výpis. Externí odkazy a detaily vyžadující JavaScript
+se nenačítají; nejde o úplný export všech nabídek portálu.
+Neznámé datum publikace zůstává `None`; dodané datum musí mít časové pásmo.
+JenPrace.cz datum bez pásma interpretuje v Europe/Prague. Chyba jednoho portálu
+nebrání zpracování ostatních, ale běh vrací exit code `1` a vypíše chybu zdroje.
 
-Graf volá `TursoEvaluationStore.is_job_duplicate(offer.url)` před evaluací.
-Čte URL z uloženého JSON, takže rozezná i dříve uložené nabídky s jiným ID.
-První běh bez tabulky funguje; chybějící tabulka znamená žádné duplicity.
-Selhání kontroly v DB nabídku vyřadí z aktuálního běhu a nahlásí chybu.
-Vyhodnocené nabídky ukládá přes `save_evaluated_job`: každý pár nabídka/evaluace
-má vlastní transakci. Pro rychlé hledání URL vzniká index nad `json_extract`.
-CLI vypíše nalezené a přeskočené nabídky, skóre, verdikt, důvody a počet
-potvrzených zápisů. Při chybě vrací exit code `1`.
+`generate_canonical_id(company, title, location)` odstraňuje diakritiku,
+sjednocuje velikost písmen a mezery, vynechává právní formy firmy, genderové
+značky, úvazky a levely v závorkách. SHA-256 má prefix `job-v1-`.
+Významové kvalifikátory jako `(Python)`, C++/C# a level mimo závorky zůstávají.
+Lokalita je součást identity; neznámá lokalita se automaticky nepáruje s konkrétním
+městem. Jde o deterministické párování, bez překladu profesí a odhadování adres.
 
-Při druhém spuštění se již uložené URL přeskočí bez LLM volání. Nové nabídky
+Graf volá `find_existing_job(offer)` před evaluací. Existující záznam obohatí
+přes `upsert_or_enrich_job(offer)`; přidá unikátní dvojice portál/URL a doplní
+prázdné `salary_raw`. Původní popis, vyplněná mzda, evaluace a její datum se
+nepřepisují. Duplicitní nabídky v jedné dávce nejdříve sloučí, takže LLM dostane
+doplněnou mzdu i zdroje při jediném volání. Novou nabídku ukládá s evaluací;
+samotná databázová funkce LLM nevolá a bez evaluace novou nabídku odmítne.
+Selhání kontroly nebo obohacení v DB nabídku vyřadí bez LLM volání a nahlásí chybu.
+CLI vypíše nalezené, přeskočené a obohacené nabídky, skóre, verdikt, důvody a
+počet potvrzených zápisů.
+
+Při prvním použití starší tabulky adaptér automaticky doplní kanonická ID
+a zdroje a sloučí již existující kanonické duplicity v jedné transakci.
+Zachová nejstarší evaluaci a její `offer_id`; nevalidní starší data migraci
+zastaví beze změn. Nová prázdná tabulka vzniká až při prvním uložení.
+
+Při druhém spuštění se již uložené pozice obohatí bez LLM volání. Nové nabídky
 nebo neúspěšně uložené výsledky se zpracují znovu. Spouštěj jeden lov současně:
-kontrola URL a následná evaluace nejsou společná rezervace a souběžné procesy
+kontrola identity a následná evaluace nejsou společná rezervace a souběžné procesy
 mohou vyhodnotit stejnou nabídku. Změna profilu sama nevyvolá přehodnocení
-uložených URL. CLI záměrně vyžaduje Turso, aby lov nespoléhal na lokální snapshot.
+uložených nabídek. Doplnění mzdy také samo nespouští novou evaluaci.
+CLI záměrně vyžaduje Turso, aby lov nespoléhal na lokální snapshot.
 
 ## Profil a CV podklady
 
@@ -231,8 +275,8 @@ Oddělené lokální podklady v `data/` (tato složka se necommituje):
 - `results.json`: dosavadní snapshot hodnocení nabídek; při tomto doplnění se nemění.
 
 Chybějící CV podklady a historie mají bezpečný prázdný výchozí stav. Historie se
-předává evaluátoru odděleně od profilu. Sběr ze StartupJobs je implementovaný;
-další zdroje, spolehlivé párování historie přihlášek proti novým URL a sledování
+předává evaluátoru odděleně od profilu. Sběr z pěti portálů je implementovaný;
+spolehlivé párování historie přihlášek proti novým URL a sledování
 pozdějších změn stavu inzerátů zůstávají další etapou.
 
 `tailored_cv_highlights` musí obsahovat doslovné položky `approved_cv_highlights`;
@@ -245,7 +289,7 @@ Kategorie A/B/C odpovídají současným verdiktům STRONG_FIT/POTENTIAL_FIT/NO_
 Skóre a verdikt používají jednotná pásma `80–100 STRONG_FIT`,
 `50–79 POTENTIAL_FIT`, `0–49 NO_GO`. `fit_reasons` obsahuje 2–3 konkrétní důvody;
 u irelevantních rolí vysvětluje chybějící shodu. Modely kontrolují HTTP(S) URL,
-neprázdný popis do 30 000 znaků a čas publikace s časovým pásmem.
+neprázdný popis do 30 000 znaků a čas publikace s časovým pásmem, pokud je známý.
 
 ## Testy
 
@@ -261,7 +305,10 @@ SQL a transakční rozhraní s mockem. Turso testy provádějí skutečné SQL n
 SQLite, včetně upsertu, rollbacku a ochrany před SQL injection; HTTP mocky ověřují
 autorizaci a redakci chyb. Ingestion testy mockují HTTP přes `httpx.MockTransport`,
 ověřují stránkování, validaci detailů a druhý průchod grafem nad SQLite bez
-jediného volání evaluátoru. Živé DB připojení je třeba ověřit s vlastním
+jediného volání evaluátoru. `test_canonical.py` ověřuje shodnou pozici z Jobs.cz
+a Práce za rohem, obohacení mezi běhy i v dávce, unikátní index, migraci a rollback.
+`test_portals.py` testuje společný kontrakt všech scraperů a výběr zdrojů v CLI.
+Živé DB připojení je třeba ověřit s vlastním
 `DATABASE_URL`. Offline testy nepotvrzují dostupnost modelu ani kvalitu LLM matchingu.
 
 ## Provozní náklady a zdroje

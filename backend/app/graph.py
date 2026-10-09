@@ -11,6 +11,7 @@ from .evaluator import EvaluationError, evaluate_job, validate_evaluation
 from .schemas import JobFitEvaluation, JobOffer, MakAIState
 from .storage import EvaluationStore, create_store
 from .turso import TursoEvaluationStore
+from .utils.sources import enrich_offer
 
 JobEvaluator = Callable[[JobOffer], JobFitEvaluation]
 
@@ -25,7 +26,7 @@ def ingest(state: MakAIState) -> MakAIState:
             errors.append(f"Ingest: neplatný inzerát na pozici {index}.")
     # Every invocation is a fresh batch; stale evaluations must not survive.
     return {"offers": offers, "evaluations": {}, "errors": errors,
-            "skipped_duplicates": [], "saved_ids": []}
+            "skipped_duplicates": [], "saved_ids": [], "enriched_ids": []}
 
 
 def filter_offers(state: MakAIState) -> MakAIState:
@@ -51,21 +52,29 @@ def build_graph(
     """Inject adapters for offline tests without changing the production graph."""
     active_store = store if store is not None else create_store(settings or get_settings())
     check_duplicate = duplicate_checker
-    if check_duplicate is None and isinstance(active_store, TursoEvaluationStore):
-        check_duplicate = active_store.is_job_duplicate
 
     def deduplicate(state: MakAIState) -> MakAIState:
         offers: list[JobOffer] = []
-        seen_urls: set[str] = set()
+        identities: dict[str, int] = {}
+        urls: dict[str, int] = {}
         skipped = list(state.get("skipped_duplicates", []))
         errors = list(state["errors"])
+        enriched = list(state.get("enriched_ids", []))
         for offer in state["offers"]:
             url = str(offer.url)
-            if url in seen_urls:
+            index = identities.get(offer.canonical_id, urls.get(url))
+            if index is not None:
+                offers[index] = enrich_offer(offers[index], offer)
+                urls[url] = index
                 skipped.append(url)
                 continue
-            seen_urls.add(url)
             try:
+                if isinstance(active_store, TursoEvaluationStore):
+                    if active_store.find_existing_job(offer) is not None:
+                        active_store.upsert_or_enrich_job(offer)
+                        enriched.append(offer.canonical_id)
+                        skipped.append(url)
+                        continue
                 if check_duplicate is not None and check_duplicate(url):
                     skipped.append(url)
                     continue
@@ -73,8 +82,11 @@ def build_graph(
                 # A failed DB check must never trigger a speculative paid evaluation.
                 errors.append(f"Deduplikace {offer.id!r}: {type(exc).__name__}; evaluace přeskočena.")
                 continue
+            identities[offer.canonical_id] = len(offers)
+            urls[url] = len(offers)
             offers.append(offer)
-        return {**state, "offers": offers, "skipped_duplicates": skipped, "errors": errors}
+        return {**state, "offers": offers, "skipped_duplicates": skipped,
+                "enriched_ids": enriched, "errors": errors}
 
     def evaluate(state: MakAIState) -> MakAIState:
         evaluations = dict(state["evaluations"])

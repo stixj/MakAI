@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 
 from backend.app.config import Settings
 from backend.app.demo import demo_evaluate_job, sample_offers
+from backend.app.schemas import JobOffer
 from backend.app.storage import (
     JsonEvaluationStore,
     PostgresEvaluationStore,
@@ -132,21 +133,22 @@ class TursoTests(unittest.TestCase):
     def test_sql_round_trip_upsert_unicode_and_injection_are_safe(self):
         attack = "id'); DROP TABLE makai_job_evaluations; --"
         offers = [
-            self.offers[0].model_copy(
-                update={"id": attack, "company": "Česká společnost"}
-            )
+            JobOffer.model_validate({**self.offers[0].model_dump(),
+                                     "id": attack, "company": "Česká společnost", "canonical_id": ""})
         ]
         evaluations = {attack: self.evaluations[self.offers[0].id]}
         with patch.object(self.store, "_request", side_effect=self.engine):
             self.store.save(offers, evaluations)
-            changed = offers[0].model_copy(update={"company": "Žlutý kůň"})
+            changed = offers[0].model_copy(update={"salary_raw": "60 000 Kč", "raw_description": "Nový popis"})
             self.store.save([changed], evaluations)
         rows = self.engine.db.execute(
             "SELECT offer_id, offer, evaluation, evaluated_at FROM makai_job_evaluations"
         ).fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][0], attack)
-        self.assertEqual(json.loads(rows[0][1])["company"], "Žlutý kůň")
+        self.assertEqual(json.loads(rows[0][1])["company"], "Česká společnost")
+        self.assertEqual(json.loads(rows[0][1])["salary_raw"], "60 000 Kč")
+        self.assertEqual(json.loads(rows[0][1])["raw_description"], offers[0].raw_description)
         self.assertEqual(
             json.loads(rows[0][2]), evaluations[attack].model_dump(mode="json")
         )
@@ -164,7 +166,7 @@ class TursoTests(unittest.TestCase):
                 "SELECT * FROM makai_job_evaluations"
             ).fetchall()
             changed = self.offers[0].model_copy(
-                update={"company": "must be rolled back"}
+                update={"salary_raw": "must be rolled back"}
             )
             with self.assertRaises(TursoError) as caught:
                 self.store.save([changed, self.offers[1]], self.evaluations)

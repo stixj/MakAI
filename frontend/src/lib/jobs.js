@@ -11,12 +11,34 @@ export function safeOfferUrl(value) {
 }
 const text = value => typeof value === 'string' && value.trim().length > 0;
 const textList = value => Array.isArray(value) && value.every(text);
+
+export function getOfferSources(offer) {
+  let sources = offer.sources;
+  if (typeof sources === 'string') {
+    try { sources = JSON.parse(sources); } catch { sources = []; }
+  }
+  if (sources && !Array.isArray(sources) && typeof sources === 'object') sources = [sources];
+  const portals = new Map();
+  for (const source of Array.isArray(sources) ? sources : []) {
+    if (!source || typeof source !== 'object' || !text(source.portal)) continue;
+    const url = safeOfferUrl(source.url);
+    const portal = source.portal.trim();
+    if (url && !portals.has(portal.toLocaleLowerCase('cs'))) {
+      portals.set(portal.toLocaleLowerCase('cs'), { portal, url });
+    }
+  }
+  if (portals.size) return [...portals.values()];
+  const url = safeOfferUrl(offer.url);
+  return url ? [{ portal: new URL(url).hostname.replace(/^www\./, ''), url }] : [];
+}
+
 export function parseJobRow(row) {
   const offer = JSON.parse(row.offer);
   const evaluation = JSON.parse(row.evaluation);
   if (!offer || !evaluation || !text(row.offer_id) || row.offer_id !== offer.id ||
       !text(offer.title) || !text(offer.company) || !text(offer.raw_description) ||
-      !safeOfferUrl(offer.url) || !text(offer.published_at) || !Number.isFinite(Date.parse(offer.published_at)) ||
+      !safeOfferUrl(offer.url) || (offer.published_at != null &&
+        (!text(offer.published_at) || !Number.isFinite(Date.parse(offer.published_at)))) ||
       !Number.isInteger(evaluation.score) || evaluation.score < 0 || evaluation.score > 100 ||
       !textList(evaluation.fit_reasons) || evaluation.fit_reasons.length < 2 || evaluation.fit_reasons.length > 3 ||
       !textList(evaluation.gap_analysis) || !textList(evaluation.tailored_cv_highlights)) {
