@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_SCHEDULE, validateSchedule, validateHunt, nextOccurrence, clockParts } from '../src/lib/schedule.js';
-import { parseCloudProfile } from './cloudProfile.js';
+import { parseCloudProfile, profileTable } from './cloudProfile.js';
 
 export class UserError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -49,6 +49,27 @@ export class CloudStore {
   async profile(db = this.client) {
     const result = await db.execute('SELECT payload FROM makai_profiles WHERE id=(SELECT profile_id FROM makai_control WHERE id=1)');
     return result.rows.length ? JSON.parse(result.rows[0].payload) : null;
+  }
+  async profiles(db = this.client) {
+    return (await db.execute('SELECT payload FROM makai_profiles ORDER BY id')).rows
+      .map(row => { const profile = JSON.parse(row.payload); return { id: profile.id, name: profile.name }; });
+  }
+  async activateProfile(id) {
+    // Validates the ID before any query or identifier interpolation.
+    profileTable(id);
+    return this.transaction(async tx => {
+      await this.expire(tx);
+      if ((await tx.execute("SELECT id FROM makai_runs WHERE status IN ('queued','running','stopping')")).rows.length)
+        throw new UserError('Nejdřív dokonči nebo zastav hledání.', 409);
+      const row = (await tx.execute({ sql: 'SELECT payload FROM makai_profiles WHERE id=?', args: [id] })).rows[0];
+      if (!row) throw new UserError('Profil nebyl nalezen.', 404);
+      const control = await this.control(tx);
+      if (control.profile_id !== id) {
+        await tx.execute({ sql: 'UPDATE makai_control SET profile_id=?, schedule=?, next_at=NULL, revision=revision+1 WHERE id=1',
+          args: [id, json({ ...JSON.parse(control.schedule), enabled: false })] });
+      }
+      return JSON.parse(row.payload);
+    });
   }
   async saveProfile(payload) {
     const profile = parseCloudProfile(payload.name, payload.content);

@@ -1,3 +1,8 @@
+> **Aktuální lokální režim:** při `VITE_JOB_SOURCE=local` se profil, historie,
+> plán a fronta hledání sdílí přes Turso s Vercel API. První místní spuštění
+> převede stará data bez mazání. Viz [společné úložiště](../docs/shared-storage.md).
+> Níže uvedené chování místních souborů platí jen pro `VITE_LOCAL_STORAGE=files`.
+
 # MakAI frontend
 
 ## GitHub Pages

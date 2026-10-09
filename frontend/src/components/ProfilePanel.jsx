@@ -8,11 +8,13 @@ import { profileApi as api } from '../lib/profileApi.js';
 const money = amount => new Intl.NumberFormat('cs-CZ').format(amount);
 
 export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
-  const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud';
+  const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
   const [profile, setProfile] = useState(null);
   const [busy, setBusy] = useState(true);
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [building, setBuilding] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const profileRevision = useRef(0);
   const [profileUpdated, setProfileUpdated] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -52,7 +54,27 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
     return () => { alive.current = false; clearInterval(timer); };
   }, []);
 
+  useEffect(() => {
+    if (!cloud) return;
+    let active = true;
+    async function synchronize() {
+      if (busy || building || running) return;
+      const revision = profileRevision.current;
+      try {
+        const [current, available] = await Promise.all([api('/api/profile'), api('/api/profile?list=1')]);
+        if (!active || revision !== profileRevision.current) return;
+        setProfiles(Array.isArray(available) ? available : []);
+        if (profile?.id !== current?.id) { onProfileChanged?.(current?.id || null); setProfileUpdated(false); callback.current(); }
+        setProfile(current);
+      } catch (failure) { if (active) setError(failure.message); }
+    }
+    synchronize();
+    const timer = setInterval(synchronize, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, [cloud, busy, building, running, profile?.id]);
+
   async function changeProfile(options) {
+    profileRevision.current += 1;
     setBusy(true); setError(''); setNotice('');
     try {
       const result = await api('/api/profile', options);
@@ -116,6 +138,12 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
     </div>}
 
     {profile && <>
+      {cloud && profiles.length > 1 && <label className="mt-4 block text-sm">Aktivní profil
+        <select value={profile.id} disabled={busy || running || building} onChange={event => changeProfile({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) })} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3">
+          {profiles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </select>
+        <span className="mt-1 block text-xs text-muted-foreground">Stejný výběr a historie na localhostu i online. Přepnutí profilu pozastaví automatiku.</span>
+      </label>}
       <details className="mt-4 border-t border-viatix-line/60 pt-3">
         <summary className="cursor-pointer py-1 text-sm font-medium text-viatix-teal">Profil a preference</summary>
         <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
@@ -141,7 +169,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
           <label className="block text-sm">Nabídek na portál<select aria-label="Počet nabídek na portál" value={limit} onChange={event => setLimit(event.target.value)} className="ml-3 rounded-xl border border-viatix-line bg-transparent px-3 py-2">{[5, 10, 15, 30].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         </fieldset>
       </details>}
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Hledání používá uložené preference. Aktualizace přehledu pouze načte výsledky.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Profil, historie a plán jsou uložené v Turso. Hledání probíhá online i při spuštění z localhostu.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
     </>}
 
     {notice && <p role="status" className="mt-3 text-sm text-viatix-teal">{notice}</p>}

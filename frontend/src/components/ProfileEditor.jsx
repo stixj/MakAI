@@ -4,7 +4,7 @@ import { REVIEW_FIELDS, draftProfileContent } from '../lib/profileDraft.js';
 
 const input = 'mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-2.5 text-sm';
 export default function ProfileEditor({ profile, disabled, onSave }) {
-  const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud';
+  const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
   const [draft, setDraft] = useState(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);

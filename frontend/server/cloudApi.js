@@ -98,7 +98,8 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         return send(200, await (route === 'profile-cv' ? analyseCv(payload, env, fetcher) : generateDraft(payload, env, fetcher)));
       }
       if (route === 'profile') {
-        if (request.method === 'GET') return send(200, await store.profile());
+        if (request.method === 'GET') return send(200, new URL(request.url, 'https://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
+        if (request.method === 'PUT') return send(200, await store.activateProfile((await readBody(request)).id));
         if (request.method === 'POST') return send(200, await store.saveProfile(await readBody(request)));
         return send(405, { error: 'Profil uprav nebo nahraj jeho novou verzi.' });
       }
