@@ -10,6 +10,7 @@ export const displayTime = (value, timezone = 'Europe/Prague') => value
   ? new Intl.DateTimeFormat('cs-CZ', { timeZone: timezone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
 
 export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
+  const [checkedAt, setCheckedAt] = useState(Date.now);
   const [expanded, setExpanded] = useState(false);
   const [draft, setDraft] = useState(null);
   const [saved, setSaved] = useState(null);
@@ -24,6 +25,7 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
   useEffect(() => { load(); }, [hasProfile]);
   useEffect(() => {
     const timer = setInterval(async () => {
+      setCheckedAt(Date.now());
       if (busy) return;
       try { const schedule = await profileApi('/api/schedule'); setSaved(schedule); if (!dirty) setDraft(schedule); } catch {}
     }, 30000);
@@ -41,7 +43,7 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
     } catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   }
-  const health = scheduleHealth(saved, { profileUpdated });
+  const health = scheduleHealth(saved, { profileUpdated, now: checkedAt });
   return <div className="mt-3">
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-viatix-teal/5 px-3 py-3">
       <div role="status" className="min-w-0 text-sm">
