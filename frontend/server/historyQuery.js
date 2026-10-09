@@ -1,3 +1,4 @@
+import { inCollection, normalizeJobState } from '../src/lib/jobState.js';
 import { filterJobs, VERDICTS } from '../src/lib/jobs.js';
 
 export const PAGE_SIZES = [6, 12, 24, 48];
@@ -11,22 +12,24 @@ export function historyQuery(url) {
   const historyPeriod = params.get('period') ?? 'all';
   const search = params.get('search') ?? '';
   const since = params.get('since');
-  if (!Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
+  const collection = params.get('collection') ?? 'active';
+  if (!['active', 'saved', 'applied', 'hidden', 'all'].includes(collection) || !Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
       !['all', ...Object.keys(VERDICTS)].includes(verdict) || !['score', 'newest'].includes(sort) ||
       !['all', '24h', '7d', '30d'].includes(historyPeriod) || search.length > 200 ||
       (since !== null && (!/^\d{4}-\d{2}-\d{2}T/.test(since) || !Number.isFinite(Date.parse(since))))) {
     throw new Error('Neplatné filtry nebo stránka historie.');
   }
-  return { page, pageSize, verdict, sort, historyPeriod, search, ...(since ? { since } : {}) };
+  return { page, pageSize, verdict, sort, historyPeriod, search, collection, ...(since ? { since } : {}) };
 }
 
 export function historyView(metadata, query) {
   const jobs = metadata.filter(row => typeof row.title === 'string' && typeof row.company === 'string' &&
     VERDICTS[row.verdict] && Number.isFinite(Number(row.score))).map(row => ({
-    id: row.offer_id, offer: { title: row.title, company: row.company },
+    id: row.offer_id, state: normalizeJobState(row.state), offer: { title: row.title, company: row.company },
     evaluation: { verdict: row.verdict, score: Number(row.score) }, evaluatedAt: row.evaluated_at,
   }));
-  const base = filterJobs(jobs, { ...query, verdict: 'all' }).filter(job =>
+  const collectionJobs = jobs.filter(job => inCollection(job.state, query.collection));
+  const base = filterJobs(collectionJobs, { ...query, verdict: 'all' }).filter(job =>
     !query.since || Date.parse(job.evaluatedAt.includes('T') ? job.evaluatedAt : job.evaluatedAt.replace(' ', 'T') + 'Z') > Date.parse(query.since));
   const counts = Object.fromEntries(Object.keys(VERDICTS).map(key => [key, base.filter(job => job.evaluation.verdict === key).length]));
   const filtered = query.verdict === 'all' ? base : base.filter(job => job.evaluation.verdict === query.verdict);
@@ -34,14 +37,15 @@ export function historyView(metadata, query) {
   const pageCount = Math.max(1, Math.ceil(total / query.pageSize));
   const page = Math.min(query.page, pageCount);
   const ids = filtered.slice((page - 1) * query.pageSize, page * query.pageSize).map(job => job.id);
-  return { ids, total, totalAll: jobs.length, counts, pageCount, page, pageSize: query.pageSize };
+  return { ids, total, totalAll: collectionJobs.length, totalStored: jobs.length, counts, pageCount, page, pageSize: query.pageSize };
 }
 
-export async function readHistoryPage(client, query) {
+export async function readHistoryPage(client, query, states) {
+  const stateById = new Map((states || []).map(row => [row.offer_id, normalizeJobState(row)]));
   const metadata = await client.execute({ sql: "SELECT offer_id, json_extract(offer, '$.title') AS title, json_extract(offer, '$.company') AS company, json_extract(evaluation, '$.score') AS score, json_extract(evaluation, '$.verdict') AS verdict, evaluated_at FROM makai_job_evaluations ORDER BY offer_id", args: [] });
-  const { ids, ...view } = historyView(metadata.rows, query);
+  const { ids, ...view } = historyView(metadata.rows.map(row => ({ ...row, state: stateById.get(row.offer_id) })), query);
   if (!ids.length) return { rows: [], ...view };
   const result = await client.execute({ sql: 'SELECT offer_id, offer, evaluation, evaluated_at FROM makai_job_evaluations WHERE offer_id IN (' + ids.map(() => '?').join(',') + ')', args: ids });
   const byId = new Map(result.rows.map(row => [row.offer_id, row]));
-  return { rows: ids.map(id => byId.get(id)).filter(Boolean), ...view };
+  return { rows: ids.map(id => { const row = byId.get(id); return row && { ...row, ...(states ? { state: stateById.get(id) || normalizeJobState() } : {}) }; }).filter(Boolean), ...view };
 }

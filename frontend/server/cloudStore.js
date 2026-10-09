@@ -1,3 +1,4 @@
+import { normalizeJobState } from '../src/lib/jobState.js';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_SCHEDULE, validateSchedule, validateHunt, nextOccurrence, clockParts } from '../src/lib/schedule.js';
 import { parseCloudProfile, profileTable } from './cloudProfile.js';
@@ -20,6 +21,7 @@ export class CloudStore {
       'CREATE TABLE IF NOT EXISTS makai_runs (id TEXT PRIMARY KEY, status TEXT NOT NULL, source TEXT NOT NULL, profile_id TEXT NOT NULL, options TEXT NOT NULL, created_at TEXT NOT NULL, scheduled_at TEXT, slot TEXT UNIQUE, started_at TEXT, finished_at TEXT, lease_until TEXT, lease_token TEXT, result TEXT, error TEXT)',
       "CREATE UNIQUE INDEX IF NOT EXISTS makai_single_active_run ON makai_runs ((1)) WHERE status IN ('queued','running','stopping')",
       'CREATE INDEX IF NOT EXISTS makai_runs_created ON makai_runs(created_at DESC)',
+      'CREATE TABLE IF NOT EXISTS makai_job_states (profile_id TEXT NOT NULL, offer_id TEXT NOT NULL, saved INTEGER NOT NULL DEFAULT 0, applied INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, PRIMARY KEY(profile_id,offer_id))',
       'CREATE TABLE IF NOT EXISTS makai_auth (id INTEGER PRIMARY KEY CHECK(id=1), password_hash TEXT NOT NULL, version TEXT NOT NULL)',
       'CREATE TABLE IF NOT EXISTS makai_login_attempts (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL)',
       { sql: 'INSERT OR IGNORE INTO makai_control(id,schedule) VALUES(1,?)', args: [json(DEFAULT_SCHEDULE)] },
@@ -49,6 +51,30 @@ export class CloudStore {
   async profile(db = this.client) {
     const result = await db.execute('SELECT payload FROM makai_profiles WHERE id=(SELECT profile_id FROM makai_control WHERE id=1)');
     return result.rows.length ? JSON.parse(result.rows[0].payload) : null;
+  }
+  async jobStates(profileId) {
+    profileTable(profileId);
+    return (await this.client.execute({ sql: 'SELECT offer_id,saved,applied,hidden FROM makai_job_states WHERE profile_id=?', args: [profileId] })).rows;
+  }
+  async updateJobState(input) {
+    const keys = Object.keys(input?.changes || {});
+    if (typeof input?.profileId !== 'string' || !/^[a-f0-9]{64}$/.test(input.profileId) ||
+        typeof input?.offerId !== 'string' || !input.offerId.trim() || input.offerId.length > 500 ||
+        !keys.length || keys.some(key => !['saved','applied','hidden'].includes(key) || typeof input.changes[key] !== 'boolean'))
+      throw new UserError('Neplatná změna stavu nabídky.');
+    return this.transaction(async tx => {
+      const control = await this.control(tx);
+      if (control.profile_id !== input.profileId) throw new UserError('Aktivní profil se změnil. Obnov přehled.', 409);
+      const table = profileTable(input.profileId);
+      const exists = await tx.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] });
+      if (!exists.rows.length || !(await tx.execute({ sql: `SELECT offer_id FROM ${table} WHERE offer_id=?`, args: [input.offerId] })).rows.length)
+        throw new UserError('Nabídka nebyla nalezena.', 404);
+      await tx.execute({ sql: `INSERT INTO makai_job_states(profile_id,offer_id,saved,applied,hidden,updated_at)
+        VALUES(?,?,?,?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET ${keys.map(key => key + '=excluded.' + key).join(',')}, updated_at=excluded.updated_at`,
+        args: [input.profileId, input.offerId, Number(input.changes.saved || false), Number(input.changes.applied || false), Number(input.changes.hidden || false), this.now().toISOString()] });
+      const row = (await tx.execute({ sql: 'SELECT saved,applied,hidden FROM makai_job_states WHERE profile_id=? AND offer_id=?', args: [input.profileId, input.offerId] })).rows[0];
+      return { offerId: input.offerId, profileId: input.profileId, state: normalizeJobState(row) };
+    });
   }
   async profiles(db = this.client) {
     return (await db.execute('SELECT payload FROM makai_profiles ORDER BY id')).rows

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Briefcase, RefreshCw, Search, X } from 'lucide-react';
 import JobCard from './components/JobCard.jsx';
 import ProfilePanel from './components/ProfilePanel.jsx';
+import { COLLECTIONS, normalizeJobState } from './lib/jobState.js';
+import { profileApi } from './lib/profileApi.js';
 import LoginGate from './components/LoginGate.jsx';
 import { VERDICTS, filterJobs, paginateJobs, pageNumbers } from './lib/jobs.js';
 import { hasJobSource, loadJobs, loadHistoryPage } from './lib/turso.js';
@@ -15,9 +17,16 @@ function EmptyState({ title, children, action }) {
   </div>;
 }
 
-function Dashboard({ accountControls }) {
+export function Dashboard({ accountControls }) {
   const configured = hasJobSource();
+  const shared = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
   const local = ['local', 'cloud'].includes(import.meta.env.VITE_JOB_SOURCE);
+  const [collection, setCollection] = useState('active');
+  const [lastAction, setLastAction] = useState(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const currentProfile = useRef(null);
+  const undoButton = useRef(null);
   const [jobs, setJobs] = useState([]);
   const [status, setStatus] = useState(configured ? 'loading' : 'unconfigured');
   const [error, setError] = useState('');
@@ -36,11 +45,12 @@ function Dashboard({ accountControls }) {
   const [profileId, setProfileId] = useState(null);
   const [newOnly, setNewOnly] = useState(false);
   const [previousVisit, setPreviousVisit] = useState(null);
+  currentProfile.current = profileId;
   const requestId = useRef(0);
   const loadedRevision = useRef(-1);
 
   useEffect(() => {
-    setNewOnly(false); setPage(1);
+    setNewOnly(false); setPage(1); setLastAction(null); setActionError('');
     try { const value = localStorage.getItem('makai-last-visit:' + profileId); setPreviousVisit(value && Number.isFinite(Date.parse(value)) ? value : null); }
     catch { setPreviousVisit(null); }
   }, [profileId]);
@@ -60,7 +70,7 @@ function Dashboard({ accountControls }) {
     const timer = setTimeout(async () => {
       try {
         const result = local
-          ? await loadHistoryPage({ page, pageSize, search, verdict, sort, historyPeriod, since: newOnly ? previousVisit : null })
+          ? await loadHistoryPage({ collection, page, pageSize, search, verdict, sort, historyPeriod, since: newOnly ? previousVisit : null })
           : await loadJobs();
         if (current !== requestId.current) return;
         setJobs(result.jobs); setInvalidCount(result.invalidCount);
@@ -76,7 +86,39 @@ function Dashboard({ accountControls }) {
       } finally { if (current === requestId.current) setLoadingResults(false); }
     }, local && search ? 250 : 0);
     return () => { clearTimeout(timer); if (requestId.current === current) requestId.current += 1; };
-  }, [search, verdict, sort, historyPeriod, page, pageSize, reloadKey, demo, profileId, newOnly, previousVisit]);
+  }, [collection, search, verdict, sort, historyPeriod, page, pageSize, reloadKey, demo, profileId, newOnly, previousVisit]);
+
+  useEffect(() => {
+    if (!shared || demo || !profileId) return;
+    const timer = setInterval(() => setReloadKey(value => value + 1), 30000);
+    return () => clearInterval(timer);
+  }, [shared, demo, profileId]);
+
+  async function changeJobState(job, key, value) {
+    const selected = profileId;
+    const result = await profileApi('/api/jobs', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileId: selected, offerId: job.id, changes: { [key]: value } }) });
+    if (currentProfile.current !== selected) return;
+    setJobs(previous => previous.map(item => item.id === job.id ? { ...item, state: result.state } : item));
+    setLastAction({ profileId: selected, offerId: job.id, key, previous: normalizeJobState(job.state)[key], removesCard: (collection === 'active' && key === 'hidden' && value) || (collection === 'saved' && (key === 'hidden' && value || key === 'saved' && !value)) || (collection === 'applied' && (key === 'hidden' && value || key === 'applied' && !value)) || (collection === 'hidden' && key === 'hidden' && !value),
+      message: key === 'saved' ? value ? 'Nabídka uložená.' : 'Uložení zrušeno.' : key === 'applied' ? value ? 'Nabídka označená jako Reagoval jsem.' : 'Označení reakce zrušeno.' : value ? 'Nabídka skrytá. Najdeš ji v sekci Skryté.' : 'Nabídka znovu zobrazená.' });
+    setActionError(''); setReloadKey(value => value + 1);
+  }
+
+  useEffect(() => { if (lastAction?.removesCard) undoButton.current?.focus({ preventScroll: true }); }, [lastAction]);
+
+  async function undoAction() {
+    const action = lastAction;
+    setUndoBusy(true); setActionError('');
+    try {
+      await profileApi('/api/jobs', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profileId: action.profileId, offerId: action.offerId, changes: { [action.key]: action.previous } }) });
+      if (currentProfile.current !== action.profileId) return;
+      setLastAction(previous => previous === action ? null : previous);
+      setReloadKey(value => value + 1);
+    } catch (failure) { setActionError(failure.message); }
+    finally { setUndoBusy(false); }
+  }
 
   async function showDemo() {
     const current = ++requestId.current;
@@ -93,6 +135,7 @@ function Dashboard({ accountControls }) {
   const visible = view.jobs;
   const counts = local && !demo && pageResult ? pageResult.counts
     : Object.fromEntries(Object.keys(VERDICTS).map(key => [key, jobs.filter(job => job.evaluation.verdict === key).length]));
+  const totalStored = pageResult?.totalStored ?? jobs.length;
   const totalAll = local && !demo && pageResult ? pageResult.totalAll : jobs.length;
   const resetFilters = () => { setSearch(''); setVerdict('all'); setHistoryPeriod('all'); setNewOnly(false); setPage(1); };
 
@@ -144,6 +187,15 @@ function Dashboard({ accountControls }) {
         <button type="button" className="inline-flex items-center gap-1 rounded-lg p-1 font-semibold text-viatix-teal" onClick={refresh}><X className="h-3.5 w-3.5" aria-hidden="true" />Zavřít ukázku</button>
       </div>}
 
+      {shared && !demo && <nav aria-label="Moje nabídky" className="mt-6 flex flex-wrap gap-2">
+        {Object.entries(COLLECTIONS).map(([key, label]) => <button type="button" key={key} aria-pressed={collection === key} onClick={() => { changeFilter(setCollection, key); resetFilters(); }} className={collection === key ? 'button-primary' : 'button-secondary'}>{label}</button>)}
+      </nav>}
+      {lastAction && <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-viatix-line bg-viatix-sand2 p-3">
+        <p role="status" className="text-sm">{lastAction.message}</p>
+        <button type="button" className="button-secondary" ref={undoButton} disabled={undoBusy} onClick={undoAction}>{undoBusy ? 'Vracím změnu…' : 'Vrátit změnu'}</button>
+      </div>}
+      {actionError && <p role="alert" className="mt-3 text-sm text-red-700">{actionError}</p>}
+
       {status === 'ready' && <section aria-label="Přehled hodnocení" className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[['all', 'Vyhodnoceno', totalAll], ...Object.entries(VERDICTS).map(([key, value]) => [key, value.title, counts[key]])].map(([key, title, count]) => <button type="button" key={key} aria-pressed={verdict === key} onClick={() => changeFilter(setVerdict, key)} className={'rounded-2xl border p-4 text-left transition-colors ' + (verdict === key ? 'border-viatix-teal bg-viatix-teal text-white' : 'border-viatix-line/60 bg-viatix-sand2 hover:border-viatix-teal/50')}>
           <span className={'text-xs ' + (verdict === key ? 'text-white/80' : 'text-muted-foreground')}>{title}</span>
@@ -178,9 +230,9 @@ function Dashboard({ accountControls }) {
           {limitReached && <p className="mb-4 text-xs text-muted-foreground">Přímé připojení načítá posledních 500 hodnocení.</p>}
           {loadingResults && <p role="status" className="mb-3 text-xs text-viatix-teal">Načítám stránku nabídek…</p>}
           {view.total > 0 && <div className="mb-5"><Pagination /></div>}
-          {visible.length > 0 ? <div className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3">{visible.map(job => <JobCard key={job.id} job={job} />)}</div> :
-            <EmptyState title={totalAll ? 'Žádná nabídka neodpovídá filtrům' : 'První příležitost teprve přijde'} action={totalAll ? <button type="button" className="button-secondary" onClick={resetFilters}>Zrušit filtry</button> : null}>
-              {totalAll ? 'Zkus jiný název pozice nebo zobraz všechna hodnocení.' : 'Vytvoř profil a spusť první hledání. Vyhodnocené nabídky se potom objeví tady.'}
+          {visible.length > 0 ? <div className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3">{visible.map(job => <JobCard key={profileId + ':' + job.id} job={job} onStateChange={shared && !demo && profileId ? changeJobState : undefined} actionsDisabled={undoBusy || loadingResults} />)}</div> :
+            <EmptyState title={totalAll ? 'Žádná nabídka neodpovídá filtrům' : collection === 'saved' ? 'Zatím nemáš uložené nabídky' : collection === 'applied' ? 'Zatím nemáš označené reakce' : collection === 'hidden' ? 'Zatím nemáš skryté nabídky' : totalStored ? 'Všechny nabídky jsou skryté' : 'První příležitost teprve přijde'} action={totalAll ? <button type="button" className="button-secondary" onClick={resetFilters}>Zrušit filtry</button> : totalStored && collection === 'active' ? <button type="button" className="button-secondary" onClick={() => changeFilter(setCollection, 'hidden')}>Prohlédnout skryté nabídky</button> : collection !== 'active' ? <button type="button" className="button-secondary" onClick={() => { changeFilter(setCollection, 'active'); resetFilters(); }}>Prohlédnout nabídky</button> : null}>
+              {totalAll ? 'Zkus jiný název pozice nebo zobraz všechna hodnocení.' : collection === 'saved' ? 'Zajímavou nabídku si odlož tlačítkem Uložit.' : collection === 'applied' ? 'Po odeslání přihlášky označ nabídku tlačítkem Reagoval jsem.' : collection === 'hidden' ? 'Skryté nabídky najdeš tady a můžeš je kdykoliv znovu zobrazit.' : totalStored ? 'Nabídky zůstávají uložené v sekci Skryté. Můžeš je kdykoliv vrátit.' : 'Vytvoř profil a spusť první hledání. Vyhodnocené nabídky se potom objeví tady.'}
             </EmptyState>}
           {view.total > 0 && <div className="mt-6"><Pagination /></div>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}

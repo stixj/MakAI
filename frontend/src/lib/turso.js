@@ -49,7 +49,7 @@ export async function loadJobs(config = getTursoConfig(), clientFactory = create
 export async function loadHistoryPage(options = {}, fetcher = fetch) {
   const params = new URLSearchParams({ view: 'paged', page: String(options.page ?? 1),
     pageSize: String(options.pageSize ?? 12), verdict: options.verdict ?? 'all',
-    sort: options.sort ?? 'score', period: options.historyPeriod ?? 'all', search: options.search ?? '' });
+    sort: options.sort ?? 'score', collection: options.collection ?? 'active', period: options.historyPeriod ?? 'all', search: options.search ?? '' });
   if (options.since) params.set('since', options.since);
   try {
     const response = await fetcher('/api/jobs?' + params, { signal: AbortSignal.timeout(25000), cache: 'no-store' });

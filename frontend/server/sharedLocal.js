@@ -45,6 +45,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
           return send(202, { ...run, ...await dispatchWorker(env, fetcher) });
         }
       }
+      if (route === '/api/jobs' && request.method === 'PATCH') return send(200, await store.updateJobState(await readBody(request)));
       if (route === '/api/jobs' && request.method === 'GET') {
         const query = historyQuery(request.url);
         if (!query) throw new UserError('Použij stránkovaný přehled.');
@@ -54,11 +55,11 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
         const table = profileTable(profile.id);
         const exists = await client.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] });
         if (!exists.rows.length) return send(200, empty());
-        return send(200, await readHistoryPage({ execute: stmt => client.execute({ ...stmt, sql: stmt.sql.replaceAll('makai_job_evaluations', table) }) }, query));
+        return send(200, await readHistoryPage({ execute: stmt => client.execute({ ...stmt, sql: stmt.sql.replaceAll('makai_job_evaluations', table) }) }, query, await store.jobStates(profile.id)));
       }
       return send(405, { error: 'Nepodporovaná metoda.' });
     } catch (error) {
-      return send(error instanceof UserError ? error.status : 503, { error: error instanceof UserError ? error.message : 'Společné úložiště se nepodařilo připravit. Původní data zůstala zachovaná; ověř Turso a místní historii.' });
+      return send(error instanceof UserError ? error.status : /^Neplatné filtry/.test(error.message) ? 400 : 503, { error: error instanceof UserError || /^Neplatné filtry/.test(error.message) ? error.message : 'Společné úložiště se nepodařilo připravit. Původní data zůstala zachovaná; ověř Turso a místní historii.' });
     }
   };
   middleware.close = () => client?.close();
