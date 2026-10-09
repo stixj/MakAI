@@ -37,7 +37,9 @@ def configuration():
 
 
 def vercel_setup(values):
-    for key in ("DATABASE_URL", "TURSO_AUTH_TOKEN", "MAKAI_LOGIN_PASSWORD", "MAKAI_SESSION_SECRET", "MAKAI_WORKER_SECRET"):
+    for key in ("DATABASE_URL", "TURSO_AUTH_TOKEN", "MAKAI_LOGIN_PASSWORD", "MAKAI_SESSION_SECRET", "MAKAI_WORKER_SECRET", "OPENAI_API_KEY", "OPENAI_MODEL", "GEMINI_API_KEY", "GEMINI_MODEL", "LLM_PROVIDER", "PROFILE_GEMINI_MODEL", "PROFILE_LLM_PROVIDER"):
+        if not values.get(key):
+            continue
         result = subprocess.run(["npx.cmd" if os.name == "nt" else "npx", "--yes", "vercel@latest", "env", "add", key,
                                  "production", "--sensitive", "--force", "--yes"],
                                 input=values[key], text=True, encoding="utf-8", cwd=ROOT, capture_output=True)

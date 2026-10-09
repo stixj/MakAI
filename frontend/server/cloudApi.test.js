@@ -19,7 +19,7 @@ async function invoke(route, request = {}, options = {}) {
 }
 test('no profile, results or worker actions reach storage without authentication', async () => {
   let calls = 0;
-  for (const route of ['profile', 'jobs', 'schedule', 'hunt', 'worker']) {
+  for (const route of ['profile', 'jobs', 'schedule', 'hunt', 'worker', 'profile-draft', 'profile-cv']) {
     const result = await invoke(route, { method: route === 'worker' ? 'POST' : 'GET' }, { clientFactory: () => { calls++; throw new Error(); } });
     assert.equal(result.status, 401);
   }

@@ -18,3 +18,4 @@ agent_instructions.md
 **/*.test.js
 **/dist/**
 **/dist-cloud/**
+**/fixtures/**

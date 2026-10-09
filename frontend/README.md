@@ -131,7 +131,13 @@ backendová logika ani API volání.
 
 Lokální přehled zobrazuje jako výchozí existující `candidate_profile.md` z kořene projektu. Panel ukazuje cílové role, lokalitu, jazyky a mzdu a dovoluje rozbalit celý profil. Tlačítko **Hledat podle profilu** spustí automatický sběr z Jobs.cz, Práce za rohem, DobráPráce.cz, JenPrace.cz, Atmoskopu a Prace.cz a AI hodnocení; limit je na každý portál. Po dokončení zobrazí počet načtených nabídek a případné chyby jednotlivých zdrojů. Obnovení nabídek pouze načítá uložené výsledky. Hledání používá API klíče z backendové konfigurace a může být zpoplatněné podle poskytovatele. Nejde o časový plánovač.
 
-**Nahrát jiný profil** přijímá UTF-8 Markdown s právě jedním strukturovaným JSON blokem nebo samostatný JSON stejných preferencí (max. 250 kB). Aktuální profil lze stáhnout jako předlohu. Neplatný import aktivní profil nezmění. PDF/DOCX import není součástí této verze. Nahrané preference nepřebírají CV podklady, historii ani kariérní reference původního kandidáta.
+Ve **Správě profilu** lze upravit aktuální profil nebo vytvořit nový pomocí AI.
+Vyber životopis (čitelné PDF, DOCX, TXT/Markdown do 2 MB) nebo krátký dotazník.
+AI předvyplní doložené zkušenosti a dovednosti; doplníš požadovanou práci,
+lokalitu, mzdu a případné doplňující otázky. Návrh zkontroluješ a upravíš před
+aktivací. Soubor CV se neukládá a generování nemění aktivní profil.
+Stejný průvodce je dostupný i na Vercelu. PDF bez čitelného textu vyžaduje textovou
+verzi nebo dotazník. Původní import profilových JSON/Markdown šablon byl z UI odstraněn.
 
 Výběr se ukládá do `data/profiles/active.json`. Obsahové ID nahraného profilu určuje jeho vlastní složku a výsledky; původní výsledky z Turso zůstávají výchozímu profilu. Při návratu na výchozí profil se jiné profily nemažou. Během hledání nelze profil přepnout nebo spustit další běh.
 
@@ -141,19 +147,31 @@ Výběr se ukládá do `data/profiles/active.json`. Obsahové ID nahraného prof
 
 API `/api/profile` a `/api/hunt` je dostupné pouze přes lokální Vite plugin při `VITE_JOB_SOURCE=local`. Backend spouští interpreter `venv/Scripts/python.exe`; prostředí a API klíče se neposílají do prohlížeče. CLI `backend/run_hunt.py` používá výchozí profil projektu.
 
-Šablony bez osobních údajů a podrobný návod jsou v `public/templates/` a přímo v panelu **Šablony a návod pro nový profil**. Markdown umožňuje doplnit profesní kontext pod strukturované preference. Obě šablony obsahují smyšlené ukázkové údaje, které je nutné nahradit vlastními.
+## Profil ze životopisu nebo dotazníku přes AI
 
-## Profil z dotazníku přes OpenAI
+**Vytvořit profil s AI** nabídne životopis nebo otázky. Průvodce pak obsahuje
+směr a zkušenosti, pracovní podmínky a mzdu. Údaje předvyplněné z CV lze opravit;
+neznámé informace AI nemá domýšlet. Návrh se uloží až po kontrole a výslovném
+potvrzení. Selhání AI zachová rozpracované odpovědi a aktivní profil.
 
-Tlačítko **Vytvořit profil s AI** otevře tři kroky: směr a zkušenosti, pracovní podmínky a mzdu. Odpovědi se odesílají až po kliknutí na **Sestavit návrh přes OpenAI**. Návrh má upravitelná pole a profesní kontext; aktivuje se až po kontrole přes **Aktivovat profil pro hledání**. Generování neukládá profil ani nespouští hledání. Úprava odpovědí odstraní zastaralý návrh.
+Server používá Gemini, pokud je k dispozici a `LLM_PROVIDER=auto`, jinak OpenAI.
+Volbu lze upravit přes `PROFILE_LLM_PROVIDER` (`gemini` nebo `openai`).
+`PROFILE_GEMINI_MODEL` dovoluje oddělit kvótu tvorby profilu od `GEMINI_MODEL`
+používaného při hledání. V tomto nasazení je nastaven `gemini-3.1-flash-lite`.
+Klíče zůstávají na serveru; průvodce zobrazuje vybraného poskytovatele před odesláním.
 
-Generátor vyžaduje **OPENAI_API_KEY** v kořenovém .env. Používá **OPENAI_MODEL** (výchozí gpt-4o-mini), nezávisle na volbě poskytovatele evaluace. Endpoint GET /api/profile/draft vrací jen přítomnost konfigurace a název modelu; neověřuje API kredit. POST vytvoří návrh přes Responses API a Pydantic structured output, s vypnutým ukládáním odpovědi (store=false) a bez automatického opakování. API klíč je pouze na serveru.
+GET `/api/profile/draft` vrací přítomnost konfigurace a poskytovatele/model.
+POST `/api/profile/cv` přečte soubor a připraví interview; POST `/api/profile/draft`
+vytvoří návrh. Lokálně se používají stejné Node obsluhy jako na Vercelu, chráněné
+kontrolou localhostu a původu požadavku. Při změně serverové konfigurace restartuj
+Vite preview. Úložiště a spouštění lokálního hledání nadále obsluhuje Python.
 
-Lokalita, jazyky, no-go a mzda se přebírají přímo z odpovědí. Výjimečné minimum je zpočátku stejné jako běžné; dlouhodobá mzda a horizont jsou neznámé (null), pokud je uživatel při kontrole nedoplní. Samostatné CV není ověřené. Původní profil, CV ani historie se generátoru neposílají. Návrhy rolí a shrnutí jsou výstupy modelu a uživatel je musí ověřit.
+Mzdy, lokalita, jazyky a no-go podmínky se přebírají z potvrzených odpovědí.
+Kontaktní údaje pro hledání nejsou potřeba. Raw CV není součástí ukládaného profilu;
+profesní kontext obsahuje zkontrolované shrnutí a odpovědi.
 
-Chybějící klíč, neúplná odpověď, odmítnutí, vyčerpaný kredit či chyba připojení zobrazí chybu a zachovají dotazník i aktivní profil. Obecné chyby SDK se redigují.
-
-Implementace strukturovaného výstupu: [oficiální OpenAI dokumentace](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses).
+Strukturovaný výstup: [OpenAI dokumentace](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses),
+[Gemini dokumentace](https://ai.google.dev/gemini-api/docs/structured-output).
 
 Při vyčerpané denní kvótě API, chybě přístupu nebo nedostupnosti poskytovatele se AI dávka zastaví a zobrazí se konkrétní důvod. Dočasné chyby 5xx se zopakují nejvýše dvakrát s krátkým čekáním; kvóta 429 se automaticky neopakuje. Již úspěšná hodnocení se uloží. OpenAI fallback zůstává pouze výslovně povolenou volbou konfigurace.
 

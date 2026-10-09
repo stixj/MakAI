@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileUp, Search, UserRound, RefreshCw, Square } from 'lucide-react';
+import { Search, UserRound, RefreshCw, Square } from 'lucide-react';
 import ProfileWizard from './ProfileWizard.jsx';
 import ProfileEditor from './ProfileEditor.jsx';
 import SchedulePanel, { displayTime } from './SchedulePanel.jsx';
@@ -11,6 +11,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
   const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud';
   const [profile, setProfile] = useState(null);
   const [busy, setBusy] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -44,7 +45,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
     }
     api('/api/profile').then(result => { if (alive.current) { setProfile(result); onProfileChanged?.(result?.id || null); } })
       .catch(failure => { if (alive.current) setError(failure.message); })
-      .finally(() => { if (alive.current) setBusy(false); });
+      .finally(() => { if (alive.current) { setBusy(false); setProfileLoaded(true); } });
     poll();
     const timer = setInterval(poll, 3000);
     return () => { alive.current = false; clearInterval(timer); };
@@ -61,18 +62,6 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
       return true;
     } catch (failure) { setError(failure.message); return false; }
     finally { setBusy(false); }
-  }
-
-  async function upload(event) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    if (file.size > 250000) { setError('Profil může mít nejvýše 250 kB.'); return; }
-    if (!/\.(md|json)$/i.test(file.name)) { setError('Nahraj profil ve formátu .md nebo .json.'); return; }
-    try {
-      await changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: file.name, content: await file.text() }) });
-    } catch { setError('Soubor se nepodařilo přečíst.'); }
   }
 
   async function startHunt() {
@@ -123,15 +112,11 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
         <button type="button" onClick={download} className="button-secondary mt-3">Stáhnout aktuální profil</button>
       </details>
     </>}
-    {!busy && <details className="mt-5 border-t border-viatix-line/60 pt-4">
+    {profileLoaded && <details className="mt-5 border-t border-viatix-line/60 pt-4">
       <summary className="cursor-pointer text-sm font-medium text-viatix-teal">{profile ? 'Správa profilu' : 'Vytvořit nebo nahrát profil'}</summary>
-      <ProfileEditor key={'editor-' + (profile?.id || 'new')} profile={profile} disabled={running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
-      <label className={'button-secondary relative mt-3 ' + (running || building ? 'opacity-50' : 'cursor-pointer')}>
-        <FileUp className="h-4 w-4" aria-hidden="true" />{profile ? 'Nahrát jiný profil' : 'Nahrát profil'}
-        <input aria-label="Nahrát jiný profil" type="file" accept=".md,.json" onChange={upload} disabled={running || building} className="absolute inset-0 w-full cursor-pointer opacity-0" />
-      </label>
+      {profile && <ProfileEditor key={'editor-' + (profile?.id || 'new')} profile={profile} disabled={busy || running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />}
       {!cloud && profile && !profile.isDefault && <button type="button" className="button-secondary ml-3" disabled={running || building} onClick={() => changeProfile({ method: 'DELETE' })}>Použít můj výchozí profil</button>}
-      {!cloud && <ProfileWizard disabled={running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />}
+      <ProfileWizard disabled={busy || running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
     </details>}
     {cloud && <SchedulePanel key={'schedule-' + (profile?.id || 'new')} hasProfile={Boolean(profile)} />}
     {!cloud && <fieldset disabled={busy || running || building} className="mt-6 rounded-2xl border border-viatix-line/60 p-4">
@@ -158,23 +143,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
       {!profile && !busy && <button type="button" className="button-secondary" onClick={() => window.location.reload()}>Načíst znovu</button>}
     </div>
     <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Ruční hledání používá uložené nastavení. Obnovení nabídek pouze načte výsledky.' : 'Místní hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
-    <details className="mt-4 rounded-2xl border border-viatix-line/60 px-4 py-3">
-      <summary className="cursor-pointer text-sm font-medium text-viatix-teal">Šablony a návod pro nový profil</summary>
-      <div className="mt-3 space-y-3 text-sm leading-relaxed text-muted-foreground">
-        <p><strong className="text-foreground">Doporučujeme Markdown (.md).</strong> Obsahuje preference v JSON a prostor pro profesní shrnutí, zkušenosti a projekty. Samostatný .json slouží pro strukturované preference.</p>
-        <ol className="list-decimal space-y-1 pl-5">
-          <li>Stáhni šablonu a nahraď ukázkové role, dovednosti, lokalitu i mzdy vlastními údaji.</li>
-          <li>Zachovej názvy polí. V Markdownu ponech jeden JSON blok a doplň profesní kontext pod ním.</li>
-          <li>Ulož jako UTF-8 a nahraj přes „Nahrát jiný profil“. Zkontroluj načtené údaje a spusť hledání.</li>
-        </ol>
-        <p className="text-xs">Šablony obsahují smyšlené ukázkové údaje. Maximální velikost je 250 kB. DOCX, PDF a TXT zatím nelze přímo nahrát.</p>
-        <div className="flex flex-wrap gap-2">
-          <a className="button-secondary" download href={import.meta.env.BASE_URL + 'templates/candidate-profile-template.md'}>Šablona Markdown (.md)</a>
-          <a className="button-secondary" download href={import.meta.env.BASE_URL + 'templates/candidate-profile-template.json'}>Šablona JSON (.json)</a>
-          <a className="button-secondary" download href={import.meta.env.BASE_URL + 'templates/profile-guide.md'}>Podrobný návod</a>
-        </div>
-      </div>
-    </details>
+    <p className="mt-3 text-xs text-muted-foreground">Profil vytvoříš ve „Správě profilu“ ze životopisu nebo krátkých otázek. Návrh od AI před uložením zkontroluješ.</p>
     {notice && <p role="status" className="mt-3 text-sm text-viatix-teal">{notice}</p>}
     {running && <p role="status" className="mt-3 text-sm text-viatix-teal">{hunt.status === 'stopping' ? 'Ukončuji hledání a další AI hodnocení…' : hunt.status === 'queued' ? 'Hledání je připravené pro pracovníka. Stránku můžeš zavřít.' : 'Procházím cílové role a hodnotím nabídky. Hledání může trvat několik minut.'}</p>}
     {hunt.status === 'cancelled' && <p role="status" className="mt-3 text-sm text-viatix-teal">Hledání bylo zastaveno. Již uložené nabídky zůstávají v historii. Rozpracovaná neuložená hodnocení se zahodila.</p>}

@@ -1,0 +1,4 @@
+
+# Preserve byte offsets in document parser fixtures.
+frontend/server/fixtures/*.pdf -text
+frontend/server/fixtures/*.docx -text

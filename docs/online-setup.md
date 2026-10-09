@@ -21,6 +21,11 @@ Set these Vercel **production server secrets**, without any `VITE_` prefix:
 | `MAKAI_LOGIN_PASSWORD` | Personal app password, at least 12 characters |
 | `MAKAI_SESSION_SECRET` | Random signing secret, at least 32 characters |
 | `MAKAI_WORKER_SECRET` | Separate worker credential, at least 32 characters |
+| `OPENAI_API_KEY` | OpenAI profile builder, when selected |
+| `GEMINI_API_KEY` | Gemini profile builder, preferred in auto mode |
+| `PROFILE_GEMINI_MODEL` (optional) | Dedicated profile model; this deployment uses `gemini-3.1-flash-lite` |
+| `PROFILE_LLM_PROVIDER` (optional) | `gemini`, `openai`, or `auto` |
+| `OPENAI_MODEL` (optional) | Uses the existing backend default `gpt-4o-mini` if absent |
 | `MAKAI_GITHUB_TOKEN` (optional) | Fine-grained token for **only this repository**, Actions write, for immediate manual workflow dispatch |
 
 The build command `npm run build:cloud` selects server API mode. Do not configure
@@ -59,7 +64,18 @@ GitHub login token into Vercel. If using a shared computer, protect these local 
 
 ## Use
 
-1. Sign in and create a profile in the editor or upload Markdown/JSON.
+1. Sign in and open “Správa profilu → Vytvořit profil s AI”. Choose a CV
+   (readable PDF, DOCX, TXT or Markdown up to 2 MB) or the questionnaire.
+   CV analysis prefills documented experience, skills and languages; confirm the
+   desired career, location, salary and any AI follow-up questions. Review and edit
+   the draft, then explicitly activate it. Existing profiles remain active until then.
+   Raw uploaded files are not persisted; only reviewed profile data is saved.
+   Scanned/image-only PDFs require a text version or the questionnaire.
+   CV text and answers are sent to the provider displayed in the wizard (Gemini or
+   OpenAI; OpenAI uses `store: false`); contact details are
+   unnecessary. The wizard has the same flow on localhost and Vercel.
+   The online builder permits 20 analysis/draft requests per UTC day; local limit
+   resets when the local server restarts.
 2. Set days, up to six times per day, portals, publication window and budgets.
 3. Save the plan and explicitly enable automation. Initial automation is off.
 4. Use “Spustit hledání teď” for a manual queued run. If a dispatch token is configured,

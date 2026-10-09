@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { localProfileBuilderPlugin } from './server/localProfileBuilder.js';
 import { localJobsPlugin } from './server/localJobs.js';
 import { localProfilesPlugin } from './server/localProfiles.js';
 
@@ -11,12 +12,12 @@ export default defineConfig(({ mode }) => {
   const frontendEnv = loadEnv(mode, frontendRoot);
   const source = mode === 'cloud' ? 'cloud' : process.env.VITE_JOB_SOURCE || frontendEnv.VITE_JOB_SOURCE;
   const local = source === 'local';
-  const backendEnv = local ? loadEnv(mode, projectRoot, ['DATABASE_URL', 'TURSO_AUTH_TOKEN']) : {};
+  const backendEnv = local ? loadEnv(mode, projectRoot, ['DATABASE_URL', 'TURSO_AUTH_TOKEN', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'LLM_PROVIDER', 'PROFILE_LLM_PROVIDER', 'PROFILE_GEMINI_MODEL']) : {};
   return {
     base: process.env.VITE_BASE_PATH || '/',
     build: { outDir: mode === 'cloud' ? 'dist-cloud' : 'dist' },
     ...(mode === 'cloud' ? { define: { 'import.meta.env.VITE_JOB_SOURCE': JSON.stringify('cloud') } } : {}),
-    plugins: [react(), ...(local ? [localProfilesPlugin(projectRoot), localJobsPlugin({
+    plugins: [react(), ...(local ? [localProfileBuilderPlugin({ ...backendEnv, ...Object.fromEntries(['OPENAI_API_KEY', 'OPENAI_MODEL', 'GEMINI_API_KEY', 'GEMINI_MODEL', 'LLM_PROVIDER', 'PROFILE_LLM_PROVIDER', 'PROFILE_GEMINI_MODEL'].filter(key => process.env[key]).map(key => [key, process.env[key]])) }), localProfilesPlugin(projectRoot), localJobsPlugin({
       url: backendEnv.DATABASE_URL?.trim(), authToken: backendEnv.TURSO_AUTH_TOKEN?.trim(),
     })] : [])],
     ...(local ? {

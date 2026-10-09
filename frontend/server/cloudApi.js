@@ -1,3 +1,4 @@
+import { builderConfig, analyseCv, generateDraft } from './profileBuilder.js';
 import { createClient } from '@libsql/client/http';
 import { createHash } from 'node:crypto';
 import { CloudStore, UserError } from './cloudStore.js';
@@ -5,17 +6,17 @@ import { authenticated, equalSecret, sameOrigin, sessionCookie, hashPassword, ve
 import { profileTable } from './cloudProfile.js';
 import { historyQuery, readHistoryPage, historyView } from './historyQuery.js';
 
-async function readBody(request) {
+export async function readBody(request, maxBytes = 300000) {
   if (!request.headers['content-type']?.startsWith('application/json')) throw new UserError('Použij JSON požadavek.');
   if (request.body !== undefined) {
-    if (Buffer.byteLength(JSON.stringify(request.body)) > 300000) throw new UserError('Požadavek je příliš velký.');
+    if (Buffer.byteLength(JSON.stringify(request.body)) > maxBytes) throw new UserError('Požadavek je příliš velký.');
     if (typeof request.body === 'string') { try { return JSON.parse(request.body); } catch { throw new UserError('Neplatný JSON.'); } }
     return request.body;
   }
   const chunks = []; let length = 0;
   for await (const chunk of request) {
     length += Buffer.byteLength(chunk);
-    if (length > 300000) throw new UserError('Požadavek je příliš velký.');
+    if (length > maxBytes) throw new UserError('Požadavek je příliš velký.');
     chunks.push(Buffer.from(chunk));
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); }
@@ -86,6 +87,15 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         if (payload.action === 'status') return send(200, await store.workerStatus(payload.id, payload.token));
         if (payload.action === 'finish') return send(200, await store.finish(payload));
         throw new UserError('Neznámá akce.');
+      }
+      if (['profile-draft', 'profile-cv'].includes(route)) {
+        if (request.method === 'GET' && route === 'profile-draft') return send(200, builderConfig(env));
+        if (request.method !== 'POST') return send(405, { error: 'Nepodporovaná metoda.' });
+        const payload = await readBody(request, route === 'profile-cv' ? 3000000 : 300000);
+        const bucket = 'builder:' + now().toISOString().slice(0, 10);
+        const quota = await client.execute({ sql: 'INSERT INTO makai_login_attempts(bucket,count) VALUES(?,1) ON CONFLICT(bucket) DO UPDATE SET count=count+1 RETURNING count', args: [bucket] });
+        if (Number(quota.rows[0].count) > 20) return send(429, { error: 'Dnešní limit tvorby profilu byl dosažen. Pokračuj zítra.' });
+        return send(200, await (route === 'profile-cv' ? analyseCv(payload, env, fetcher) : generateDraft(payload, env, fetcher)));
       }
       if (route === 'profile') {
         if (request.method === 'GET') return send(200, await store.profile());
