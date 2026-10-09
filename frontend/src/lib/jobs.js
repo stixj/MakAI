@@ -1,3 +1,4 @@
+import { normalizeJobState } from './jobState.js';
 export const VERDICTS = {
   STRONG_FIT: { label: 'Silná shoda', title: 'Silná shoda', color: 'bg-viatix-mint/20 text-viatix-teal', dot: 'bg-viatix-teal' },
   POTENTIAL_FIT: { label: 'Možná shoda', title: 'Možná shoda', color: 'bg-viatix-amber/20 text-[#9a4b12]', dot: 'bg-viatix-amber-hot' },
@@ -46,7 +47,7 @@ export function parseJobRow(row) {
   }
   const expected = evaluation.score >= 80 ? 'STRONG_FIT' : evaluation.score >= 50 ? 'POTENTIAL_FIT' : 'NO_GO';
   if (evaluation.verdict !== expected) throw new Error('Verdikt neodpovídá skóre.');
-  return { id: row.offer_id, offer, evaluation, evaluatedAt: row.evaluated_at };
+  return { id: row.offer_id, offer, evaluation, evaluatedAt: row.evaluated_at, state: normalizeJobState(row.state) };
 }
 export function decodeJobRows(rows) {
   const jobs = [];

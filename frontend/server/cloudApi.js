@@ -118,6 +118,7 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         return send(405, { error: 'Nepodporovaná metoda.' });
       }
       if (route === 'jobs') {
+        if (request.method === 'PATCH') return send(200, await store.updateJobState(await readBody(request)));
         if (request.method !== 'GET') return send(405, { error: 'Nepodporovaná metoda.' });
         const query = historyQuery(request.url);
         if (!query) throw new UserError('Použij stránkovaný přehled.');
@@ -127,7 +128,7 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         const table = profileTable(profile.id);
         const exists = await client.execute({ sql: "SELECT name FROM sqlite_master WHERE type='table' AND name=?", args: [table] });
         if (!exists.rows.length) return send(200, empty());
-        return send(200, await readHistoryPage({ execute: stmt => client.execute({ ...stmt, sql: stmt.sql.replaceAll('makai_job_evaluations', table) }) }, query));
+        return send(200, await readHistoryPage({ execute: stmt => client.execute({ ...stmt, sql: stmt.sql.replaceAll('makai_job_evaluations', table) }) }, query, await store.jobStates(profile.id)));
       }
       return send(404, { error: 'Neznámá cesta.' });
     } catch (error) {

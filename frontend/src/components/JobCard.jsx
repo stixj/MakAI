@@ -1,7 +1,18 @@
-import { ArrowUpRight, Building2, CalendarDays, MapPin, ChevronDown, Check, AlertCircle, X } from 'lucide-react';
+import { useState } from 'react';
+import { normalizeJobState } from '../lib/jobState.js';
+import { ArrowUpRight, Building2, CalendarDays, Bookmark, EyeOff, MapPin, ChevronDown, Check, AlertCircle, X } from 'lucide-react';
 import { VERDICTS, formatDate, getOfferSources, safeOfferUrl } from '../lib/jobs.js';
 
-export default function JobCard({ job }) {
+export default function JobCard({ job, onStateChange, actionsDisabled = false }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const state = normalizeJobState(job.state);
+  async function change(key) {
+    setSaving(true); setError('');
+    try { await onStateChange(job, key, !state[key]); }
+    catch (failure) { setError(failure.message || 'Změnu se nepodařilo uložit. Zkus to znovu.'); }
+    finally { setSaving(false); }
+  }
   const { offer, evaluation } = job;
   const badge = VERDICTS[evaluation.verdict];
   const href = safeOfferUrl(offer.url);
@@ -60,6 +71,15 @@ export default function JobCard({ job }) {
           <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{offer.raw_description}</p>
         </details>
       </div>
+      {!job.demo && onStateChange && <div className="border-t border-border/30 px-4 py-3">
+        <div className="flex flex-wrap gap-2" aria-label="Moje označení nabídky" aria-busy={saving}>
+          <button type="button" disabled={saving || actionsDisabled} aria-pressed={state.saved} aria-label={state.saved ? 'Zrušit uložení nabídky' : 'Uložit nabídku'} onClick={() => change('saved')} className={'inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium ' + (state.saved ? 'border-viatix-teal bg-viatix-teal/10 text-viatix-teal' : 'border-viatix-line text-viatix-teal')}><Bookmark className="h-4 w-4" aria-hidden="true" />{state.saved ? 'Uloženo' : 'Uložit'}</button>
+          <button type="button" disabled={saving || actionsDisabled} aria-pressed={state.applied} aria-label={state.applied ? 'Zrušit označení Reagoval jsem' : 'Označit Reagoval jsem'} onClick={() => change('applied')} className={'inline-flex min-h-11 items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium ' + (state.applied ? 'border-viatix-teal bg-viatix-teal/10 text-viatix-teal' : 'border-viatix-line text-viatix-teal')}><Check className="h-4 w-4" aria-hidden="true" />{state.applied ? 'Vrátit reakci' : 'Reagoval jsem'}</button>
+          <button type="button" disabled={saving || actionsDisabled} aria-pressed={state.hidden} onClick={() => change('hidden')} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium text-muted-foreground"><EyeOff className="h-4 w-4" aria-hidden="true" />{state.hidden ? 'Zobrazit znovu' : 'Skrýt'}</button>
+        </div>
+        {saving && <p role="status" className="mt-2 text-xs text-muted-foreground">Ukládám změnu…</p>}
+        {error && <p role="alert" className="mt-2 text-sm text-red-700">{error}</p>}
+      </div>}
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border/30 px-4 py-3 text-[11px] text-muted-foreground">
         <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />Vyhodnoceno {formatDate(job.evaluatedAt)}</span>
         {job.demo ? <span>Smyšlená ukázka</span> : href && <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-viatix-teal transition-colors hover:bg-viatix-teal/10" aria-label={'Otevřít inzerát: ' + offer.title}>Otevřít inzerát<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></a>}
