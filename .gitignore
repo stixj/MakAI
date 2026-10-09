@@ -26,3 +26,6 @@ node_modules/
 
 .vercel
 .env*
+
+# Separate online build must not overwrite localhost preview
+dist-cloud/

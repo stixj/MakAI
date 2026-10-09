@@ -34,6 +34,9 @@ Pro skutečný lokální přehled s existujícím backendovým `.env` nastav ve
 VITE_JOB_SOURCE=local
 ```
 
+Lokální build ukládá soubory do `dist/`, online build do `dist-cloud/`, takže
+nasazení na Vercel nepřepíše běžící lokální náhled.
+
 Pak ve složce `frontend` spusť `npm run dev` pro `http://localhost:5173`, nebo
 `npm run build` a `npm run preview` pro `http://localhost:4173`.
 Po změně prostředí restartuj server. Vite obsluhuje čtecí `/api/jobs`, který

@@ -17,3 +17,4 @@ agent_instructions.md
 **/__pycache__/**
 **/*.test.js
 **/dist/**
+**/dist-cloud/**

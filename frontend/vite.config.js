@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
   const backendEnv = local ? loadEnv(mode, projectRoot, ['DATABASE_URL', 'TURSO_AUTH_TOKEN']) : {};
   return {
     base: process.env.VITE_BASE_PATH || '/',
+    build: { outDir: mode === 'cloud' ? 'dist-cloud' : 'dist' },
     ...(mode === 'cloud' ? { define: { 'import.meta.env.VITE_JOB_SOURCE': JSON.stringify('cloud') } } : {}),
     plugins: [react(), ...(local ? [localProfilesPlugin(projectRoot), localJobsPlugin({
       url: backendEnv.DATABASE_URL?.trim(), authToken: backendEnv.TURSO_AUTH_TOKEN?.trim(),
