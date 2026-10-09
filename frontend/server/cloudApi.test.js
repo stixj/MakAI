@@ -87,3 +87,27 @@ test('real API login, profile, plan, manual queue and worker result flow use onl
   const jobs = await invoke('jobs', { headers: authHeaders, url: '/api/jobs?view=paged' }, options);
   assert.equal(jobs.status, 200); assert.deepEqual(jobs.body.rows, []);
 });
+
+test('password change requires current credentials, stores only hash and revokes previous sessions', async () => {
+  const client = createClient({ url: 'file::memory:' });
+  const options = {};
+  // Keep prototype methods on the real SDK client while suppressing per-request close.
+  options.clientFactory = () => new Proxy(client, { get(target, key) { if (key === 'close') return () => {}; const value = target[key]; return typeof value === 'function' ? value.bind(target) : value; } });
+  const jsonHeaders = { cookie, host: 'makai.vercel.app', 'content-type': 'application/json' };
+  try {
+    assert.equal((await invoke('session', { method: 'PUT', headers: { ...jsonHeaders, cookie: '' }, body: {} }, options)).status, 401);
+    assert.equal((await invoke('session', { method: 'PUT', headers: jsonHeaders, body: { password: 'wrong', newPassword: 'changed-password-456' } }, options)).status, 401);
+    assert.equal((await invoke('session', { method: 'PUT', headers: jsonHeaders, body: { password: env.MAKAI_LOGIN_PASSWORD, newPassword: 'short' } }, options)).status, 400);
+    const changed = await invoke('session', { method: 'PUT', headers: jsonHeaders, body: { password: env.MAKAI_LOGIN_PASSWORD, newPassword: 'changed-password-456' } }, options);
+    assert.equal(changed.status, 200);
+    const stored = (await client.execute('SELECT * FROM makai_auth')).rows[0];
+    assert.ok(!stored.password_hash.includes('changed-password-456'));
+    assert.equal((await invoke('session', { headers: { cookie } }, options)).body.authenticated, false);
+    assert.equal((await invoke('profile', { headers: { cookie } }, options)).status, 401);
+    const freshCookie = changed.headers['Set-Cookie'].split(';')[0];
+    assert.equal((await invoke('session', { headers: { cookie: freshCookie } }, options)).body.authenticated, true);
+    const login = password => invoke('session', { method: 'POST', headers: jsonHeaders, body: { password } }, options);
+    assert.equal((await login(env.MAKAI_LOGIN_PASSWORD)).status, 401);
+    assert.equal((await login('changed-password-456')).status, 200);
+  } finally { client.close(); }
+});

@@ -1,7 +1,7 @@
 import { createClient } from '@libsql/client/http';
 import { createHash } from 'node:crypto';
 import { CloudStore, UserError } from './cloudStore.js';
-import { authenticated, equalSecret, sameOrigin, sessionCookie } from './cloudAuth.js';
+import { authenticated, equalSecret, sameOrigin, sessionCookie, hashPassword, verifyPassword } from './cloudAuth.js';
 import { profileTable } from './cloudProfile.js';
 import { historyQuery, readHistoryPage, historyView } from './historyQuery.js';
 
@@ -57,17 +57,27 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
       client = clientFactory({ url: env.DATABASE_URL, authToken: env.TURSO_AUTH_TOKEN });
       const store = new CloudStore(client, { now });
       await store.initialize();
+      const auth = route === 'worker' ? null : await store.auth();
+      const sessionEnv = auth ? { ...env, MAKAI_AUTH_VERSION: auth.version } : env;
+      if (route !== 'worker' && route !== 'session' && !authenticated(request, sessionEnv, now().getTime())) return send(401, { error: 'Přihlas se znovu.', code: 'LOGIN_REQUIRED' });
       if (route === 'session') {
-        if (request.method === 'GET') return send(200, { authenticated: authenticated(request, env, now().getTime()) });
+        if (request.method === 'GET') return send(200, { authenticated: authenticated(request, sessionEnv, now().getTime()) });
         if (request.method === 'DELETE') return send(200, { authenticated: false }, { 'Set-Cookie': 'makai_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0' });
-        if (request.method !== 'POST') return send(405, { error: 'Nepodporovaná metoda.' });
+        if (!['POST', 'PUT'].includes(request.method)) return send(405, { error: 'Nepodporovaná metoda.' });
+        if (request.method === 'PUT' && !authenticated(request, sessionEnv, now().getTime())) return send(401, { error: 'Přihlas se do MakAI.', code: 'LOGIN_REQUIRED' });
         const payload = await readBody(request);
         const ip = request.headers['x-forwarded-for']?.split(',')[0] || request.socket?.remoteAddress || 'unknown';
         const bucket = createHash('sha256').update(`${ip}:${Math.floor(now().getTime() / 900000)}`).digest('hex');
         const attempts = await client.execute({ sql: 'INSERT INTO makai_login_attempts(bucket,count) VALUES(?,1) ON CONFLICT(bucket) DO UPDATE SET count=count+1 RETURNING count', args: [bucket] });
         if (Number(attempts.rows[0].count) > 10) return send(429, { error: 'Příliš mnoho pokusů. Zkus přihlášení za 15 minut.' });
-        if (!equalSecret(payload.password, env.MAKAI_LOGIN_PASSWORD)) return send(401, { error: 'Nesprávné heslo.' });
-        return send(200, { authenticated: true }, { 'Set-Cookie': sessionCookie(env, now().getTime()) });
+        if (!await verifyPassword(payload.password, auth?.password_hash, env.MAKAI_LOGIN_PASSWORD)) return send(401, { error: 'Nesprávné heslo.' });
+        if (request.method === 'PUT') {
+          if (typeof payload.newPassword !== 'string' || payload.newPassword.length < 12 || payload.newPassword.length > 128 || Buffer.byteLength(payload.newPassword) > 512) throw new UserError('Nové heslo musí mít 12–128 znaků.');
+          if (equalSecret(payload.password, payload.newPassword)) throw new UserError('Zvol jiné heslo než současné.');
+          const version = await store.changePassword(await hashPassword(payload.newPassword), auth?.version || null);
+          return send(200, { authenticated: true }, { 'Set-Cookie': sessionCookie({ ...env, MAKAI_AUTH_VERSION: version }, now().getTime()) });
+        }
+        return send(200, { authenticated: true }, { 'Set-Cookie': sessionCookie(sessionEnv, now().getTime()) });
       }
       if (route === 'worker') {
         const payload = await readBody(request);

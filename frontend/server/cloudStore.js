@@ -20,6 +20,7 @@ export class CloudStore {
       'CREATE TABLE IF NOT EXISTS makai_runs (id TEXT PRIMARY KEY, status TEXT NOT NULL, source TEXT NOT NULL, profile_id TEXT NOT NULL, options TEXT NOT NULL, created_at TEXT NOT NULL, scheduled_at TEXT, slot TEXT UNIQUE, started_at TEXT, finished_at TEXT, lease_until TEXT, lease_token TEXT, result TEXT, error TEXT)',
       "CREATE UNIQUE INDEX IF NOT EXISTS makai_single_active_run ON makai_runs ((1)) WHERE status IN ('queued','running','stopping')",
       'CREATE INDEX IF NOT EXISTS makai_runs_created ON makai_runs(created_at DESC)',
+      'CREATE TABLE IF NOT EXISTS makai_auth (id INTEGER PRIMARY KEY CHECK(id=1), password_hash TEXT NOT NULL, version TEXT NOT NULL)',
       'CREATE TABLE IF NOT EXISTS makai_login_attempts (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL)',
       { sql: 'INSERT OR IGNORE INTO makai_control(id,schedule) VALUES(1,?)', args: [json(DEFAULT_SCHEDULE)] },
     ], 'write');
@@ -33,6 +34,16 @@ export class CloudStore {
   async expire(db) {
     const now = this.now().toISOString();
     await db.execute({ sql: "UPDATE makai_runs SET status=CASE WHEN status='stopping' THEN 'cancelled' ELSE 'error' END, finished_at=?, error='Zpracování se přerušilo nebo překročilo časový limit.' WHERE status IN ('running','stopping') AND lease_until<=?", args: [now, now] });
+  }
+  async auth(db = this.client) { return (await db.execute('SELECT password_hash, version FROM makai_auth WHERE id=1')).rows[0] || null; }
+  async changePassword(passwordHash, expectedVersion) {
+    return this.transaction(async tx => {
+      const current = await this.auth(tx);
+      if ((current?.version || null) !== expectedVersion) throw new UserError('Heslo se mezitím změnilo. Přihlas se znovu.', 409);
+      const version = randomUUID();
+      await tx.execute({ sql: 'INSERT INTO makai_auth(id,password_hash,version) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET password_hash=excluded.password_hash,version=excluded.version', args: [passwordHash, version] });
+      return version;
+    });
   }
   async control(db = this.client) { return (await db.execute('SELECT * FROM makai_control WHERE id=1')).rows[0]; }
   async profile(db = this.client) {

@@ -28,6 +28,13 @@ The build command `npm run build:cloud` selects server API mode. Do not configur
 invalidates existing sessions. The personal password is a single-owner login,
 not a multi-user account system.
 
+After signing in, use “Změnit heslo” to choose a new password (12–128 characters),
+confirming the current password. Only a salted scrypt hash is stored in Turso.
+Changing the password invalidates previous sessions on other devices; the current
+browser receives a fresh session. The original password in `data/online-access.txt`
+and `MAKAI_LOGIN_PASSWORD` is then no longer accepted: it is only the initial login
+credential before the first password change.
+
 GitHub repository Actions secrets: `DATABASE_URL`, `TURSO_AUTH_TOKEN`,
 `MAKAI_WORKER_SECRET` (the same worker secret as Vercel), and your configured
 `GEMINI_API_KEY` and/or `OPENAI_API_KEY`. Repository variables: `MAKAI_URL` (the
