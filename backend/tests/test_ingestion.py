@@ -208,8 +208,8 @@ class IngestionIntegrationTests(unittest.TestCase):
              patch("backend.run_hunt.build_graph", return_value=graph), \
              patch("backend.run_hunt.fetch_startupjobs", return_value=self.offers), \
              patch("backend.run_hunt.Console", return_value=Console(file=output, width=180)):
-            self.assertEqual(run_hunt.main(["--limit", "2"]), 0)
-            self.assertEqual(run_hunt.main(["--limit", "2"]), 0)
+            self.assertEqual(run_hunt.main(["--portals", "startupjobs", "--limit", "2"]), 0)
+            self.assertEqual(run_hunt.main(["--portals", "startupjobs", "--limit", "2"]), 0)
         text = output.getvalue()
         self.assertIn("STRONG_FIT", text)
         self.assertIn("95/100", text)

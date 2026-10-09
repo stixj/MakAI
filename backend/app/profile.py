@@ -23,8 +23,8 @@ class SalaryPreferences(BaseModel):
     standard_minimum_czk: int = Field(ge=0)
     interesting_minimum_czk: int = Field(ge=0)
     exceptional_minimum_czk: int = Field(ge=0)
-    long_term_target_czk: int = Field(ge=0)
-    long_term_horizon_years: int = Field(ge=1)
+    long_term_target_czk: int | None = Field(default=None, ge=0)
+    long_term_horizon_years: int | None = Field(default=None, ge=1)
     historical_fixed_monthly_czk: int | None = Field(default=None, ge=0)
     notes: str
 
@@ -93,6 +93,19 @@ def load_candidate_profile(
 ) -> CandidateProfile:
     """Preference načteme z jediného JSON bloku; kariérní kontext zůstává Markdown."""
     text = path.read_text(encoding="utf-8")
+    facts = (
+        CVFacts.model_validate_json(cv_facts_path.read_text(encoding="utf-8"))
+        if cv_facts_path.exists() else CVFacts()
+    )
+    return parse_candidate_profile(text, facts)
+
+
+def parse_candidate_profile(text: str, facts: CVFacts | None = None) -> CandidateProfile:
+    """Validate uploaded Markdown or structured JSON without borrowing another CV."""
+    facts = facts or CVFacts()
+    text = text.lstrip("\ufeff").replace("\r\n", "\n")
+    if text.lstrip().startswith("{"):
+        text = "```json\n" + text.strip() + "\n```\n"
     blocks = list(
         re.finditer(r"^```json\s*\n(.*?)^```\s*$", text, flags=re.MULTILINE | re.DOTALL)
     )
@@ -105,11 +118,6 @@ def load_candidate_profile(
         raise ValueError(
             "CV podklady a načtený kontext nepatří do strukturovaných preferencí."
         )
-    facts = (
-        CVFacts.model_validate_json(cv_facts_path.read_text(encoding="utf-8"))
-        if cv_facts_path.exists()
-        else CVFacts()
-    )
     data["approved_cv_highlights"] = facts.approved_cv_highlights
     data["cv_source"] = facts.cv_source
     data["profile_markdown"] = (

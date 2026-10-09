@@ -97,7 +97,8 @@ def posting_to_offer(posting: dict, url: str, portal: str, *,
         id=source_id or portal.casefold().replace(".", "-") + "-" + hashlib.sha256(url.encode()).hexdigest()[:20],
         title=posting["title"], company=posting["hiringOrganization"]["name"],
         url=url, raw_description=text,
-        published_at=source_date(posting["datePosted"], allow_local_time=allow_local_time),
+        published_at=(source_date(posting["datePosted"], allow_local_time=allow_local_time)
+                      if "datePosted" in posting else None),
         location=location_text(posting), salary_raw=salary_text(posting.get("baseSalary")),
         sources=[{"portal": portal, "url": url}],
     )

@@ -3,6 +3,7 @@
 import json
 import unittest
 from types import SimpleNamespace
+from google.genai.errors import ClientError, ServerError
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -11,7 +12,7 @@ from backend.app.config import Settings
 from backend.app.demo import demo_evaluate_job, sample_offers
 from backend.app.evaluator import (
     EvaluationError, _evaluate_gemini, _evaluate_openai,
-    build_prompt, evaluate_job, validate_evaluation,
+    build_prompt, evaluate_job, validate_evaluation, provider_failure,
 )
 from backend.app.profile import MASTER_PROFILE
 from backend.app.schemas import JobFitEvaluation, JobOffer
@@ -144,3 +145,45 @@ class EvaluatorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProviderAvailabilityTests(unittest.TestCase):
+    def test_daily_quota_is_actionable_and_never_retried(self):
+        exc = ClientError(429, {"error": {"message": "secret body and profile", "status": "RESOURCE_EXHAUSTED",
+                          "details": [{"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}})
+        settings = Settings(gemini_api_key="test-only")
+        with patch("backend.app.evaluator.get_settings", return_value=settings), \
+             patch("backend.app.evaluator._evaluate_gemini", side_effect=exc) as call, \
+             patch("backend.app.evaluator.time.sleep") as sleep:
+            with self.assertRaises(EvaluationError) as caught:
+                evaluate_job(sample_offers()[0])
+        self.assertEqual(caught.exception.kind, "daily_quota")
+        self.assertTrue(caught.exception.stop_batch)
+        self.assertIn("denní limit", str(caught.exception))
+        self.assertNotIn("secret", str(caught.exception))
+        call.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_transient_service_failure_gets_only_two_short_retries(self):
+        exc = ServerError(503, {"error": {"message": "private body", "status": "UNAVAILABLE"}})
+        with patch("backend.app.evaluator.get_settings", return_value=Settings(gemini_api_key="test-only")), \
+             patch("backend.app.evaluator._evaluate_gemini", side_effect=exc) as call, \
+             patch("backend.app.evaluator.time.sleep") as sleep:
+            with self.assertRaises(EvaluationError) as caught:
+                evaluate_job(sample_offers()[0])
+        self.assertEqual(call.call_count, 3)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [1, 2])
+        self.assertTrue(caught.exception.stop_batch)
+        self.assertEqual(caught.exception.kind, "service_unavailable")
+        self.assertNotIn("private", str(caught.exception))
+
+    def test_transient_retry_can_recover_and_does_not_call_openai(self):
+        exc = ServerError(503, {"error": {"message": "temporary"}})
+        expected = demo_evaluate_job(sample_offers()[0])
+        with patch("backend.app.evaluator.get_settings", return_value=Settings(gemini_api_key="test-only", openai_api_key="test-only")), \
+             patch("backend.app.evaluator._evaluate_gemini", side_effect=[exc, expected]) as call, \
+             patch("backend.app.evaluator._evaluate_openai") as openai, \
+             patch("backend.app.evaluator.time.sleep"):
+            self.assertEqual(evaluate_job(sample_offers()[0]), expected)
+        self.assertEqual(call.call_count, 2)
+        openai.assert_not_called()

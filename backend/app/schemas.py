@@ -85,3 +85,4 @@ class MakAIState(TypedDict):
     skipped_duplicates: NotRequired[list[str]]
     saved_ids: NotRequired[list[str]]
     enriched_ids: NotRequired[list[str]]
+    evaluation_blocked: NotRequired[dict | None]

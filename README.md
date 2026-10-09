@@ -1,7 +1,7 @@
 # MakAI
 
 Osobní AI systém pro sémantické hodnocení pracovních nabídek a výběr relevantních
-podkladů pro životopis. Obsahuje sběr reálných nabídek ze StartupJobs, Jobs.cz,
+podkladů pro životopis. Obsahuje sběr reálných nabídek z Jobs.cz, Práce za rohem, DobráPráce.cz, StartupJobs,
 Prace.cz, JenPrace.cz a Atmoskopu, kanonickou deduplikaci před LLM evaluací,
 slučování zdrojů a doplnění mzdy v Turso.
 `run_hunt.py` používá reálné nabídky; `run_local.py` zachovává dva explicitně
@@ -28,9 +28,9 @@ označené mockové inzeráty. Generování finálního CV patří do dalších 
   obohatí bez další evaluace. Kontroluje také původní URL a URL ve zdrojích.
   Sémantická no-go kritéria posuzuje LLM nad celým kontextem.
 - `scrapers/startupjobs.py`: veřejné vyhledávací API StartupJobs a strukturovaný
-  `JobPosting` z detailu nabídky; AI, Python a Vývoj s omezeným stránkováním.
+  `JobPosting` z detailu nabídky; dotazy z cílových rolí profilu a omezené stránkování.
 - `scrapers/base.py`: abstraktní `BaseScraper.fetch_jobs(limit)`; `portals.py`
-  přidává čtyři české portály a `structured.py` společné mapování JobPosting.
+  přidává šest českých portálů a `structured.py` společné mapování JobPosting.
 - `db.py`: unikátní kanonický index, migrace starších nabídek a `upsert_or_enrich_job`.
 - `storage.py`: rozhraní `EvaluationStore`, atomický JSON snapshot a transakční
   PostgreSQL upsert; `turso.py` přidává transakční Turso/libSQL přes HTTPS. Žádné připojení k síti při importu modulů.
@@ -200,21 +200,21 @@ S nastaveným Turso a klíčem k LLM spusť z kořene projektu:
 # Malý vzorek pro ověření:
 .\venv\Scripts\python.exe backend/run_hunt.py --limit 3
 # Vybrané portály (limit na každý portál):
-.\venv\Scripts\python.exe backend/run_hunt.py --portals jobs prace jenprace atmoskop --limit 3
+.\venv\Scripts\python.exe backend/run_hunt.py --portals jobs pracezarohem dobraprace jenprace atmoskop prace --limit 3
 # Všechny zdroje včetně StartupJobs:
 .\venv\Scripts\python.exe backend/run_hunt.py --portals all --limit 3
 ```
 
-Výchozí zdroj je StartupJobs; `--portals` vybírá další adaptéry. Výchozí limit
+Výchozí zdroje jsou Jobs.cz, Práce za rohem, DobráPráce.cz, JenPrace.cz, Atmoskop a Prace.cz, stejně jako na localhostu. StartupJobs zůstává volitelný přes `--portals startupjobs` nebo `--portals all`. Výchozí limit
 je 15 na portál, povolený rozsah 1–100. CLI nejdřív ověří Turso a stáhne
-nabídky. StartupJobs střídá sekci AI vývojář, Python ve Vývoji a obecný Vývoj;
+nabídky. CLI hledá na StartupJobs a Jobs.cz podle cílových rolí v profilu;
 deduplikuje ID ze zdroje a stránkuje nejvýše deset stránek na vyhledávání.
 Používá `httpx`, vlastní User-Agent, 20sekundový timeout, bez automatického
 opakování požadavků. Detail parsuje přes `beautifulsoup4`, načítá celé znění,
 podmínky a zdrojové datum publikace. Nabídky s prošlou platností nebo HTTP
 404/410 vynechá. Chybějící popis nevymýšlí; nevalidní detail hlásí.
 Prace.cz a JenPrace.cz používají JSON-LD, Atmoskop vložený detail aplikace a
-Jobs.cz JSON-LD nebo HTML s poli `data-test`. Jobs.cz hledá AI a Python;
+Jobs.cz JSON-LD nebo HTML s poli `data-test`. Jobs.cz v CLI a localhost hledání používá cílové role profilu;
 ostatní nové adaptéry používají veřejné výpisy. Pro vlastní filtry lze adaptéru
 předat `listing_urls` na jeho doméně. Stránkování sleduje odkaz `rel="next"`,
 nejvýše deset stránek na výpis. Externí odkazy a detaily vyžadující JavaScript
@@ -275,7 +275,7 @@ Oddělené lokální podklady v `data/` (tato složka se necommituje):
 - `results.json`: dosavadní snapshot hodnocení nabídek; při tomto doplnění se nemění.
 
 Chybějící CV podklady a historie mají bezpečný prázdný výchozí stav. Historie se
-předává evaluátoru odděleně od profilu. Sběr z pěti portálů je implementovaný;
+předává evaluátoru odděleně od profilu. Sběr ze šesti požadovaných portálů a volitelného StartupJobs je implementovaný;
 spolehlivé párování historie přihlášek proti novým URL a sledování
 pozdějších změn stavu inzerátů zůstávají další etapou.
 
@@ -330,7 +330,9 @@ a [OpenAI ceníku](https://developers.openai.com/api/docs/pricing).
 
 ## Webový přehled (Vite + React)
 
-Samostatný frontend v `frontend/` zobrazuje hodnocení přímo z Turso.
+Samostatný frontend v `frontend/` zobrazuje hodnocení z Turso. Na localhostu
+používá čtecí API Vite s backendovým `.env`; při statickém nasazení samostatný
+read-only token v prohlížeči.
 Používá vizuální tokeny Viatixu a staví se na statické soubory pro Vercel.
 Spuštění, samostatný read-only token a nasazení popisuje
 [frontend/README.md](frontend/README.md). Python backend není součástí webového buildu.

@@ -26,7 +26,7 @@ def ingest(state: MakAIState) -> MakAIState:
             errors.append(f"Ingest: neplatný inzerát na pozici {index}.")
     # Every invocation is a fresh batch; stale evaluations must not survive.
     return {"offers": offers, "evaluations": {}, "errors": errors,
-            "skipped_duplicates": [], "saved_ids": [], "enriched_ids": []}
+            "skipped_duplicates": [], "saved_ids": [], "enriched_ids": [], "evaluation_blocked": None}
 
 
 def filter_offers(state: MakAIState) -> MakAIState:
@@ -91,14 +91,20 @@ def build_graph(
     def evaluate(state: MakAIState) -> MakAIState:
         evaluations = dict(state["evaluations"])
         errors = list(state["errors"])
+        blocked = None
         for offer in state["offers"]:
             try:
                 evaluations[offer.id] = validate_evaluation(evaluator(offer))
             except EvaluationError as exc:
+                if exc.stop_batch:
+                    blocked = {"kind": exc.kind, "message": str(exc),
+                               "notEvaluated": len(state["offers"]) - len(evaluations)}
+                    errors.append(str(exc))
+                    break
                 errors.append(f"Evaluate {offer.id!r}: {exc}")
             except Exception as exc:
                 errors.append(f"Evaluate {offer.id!r}: {type(exc).__name__}.")
-        return {**state, "evaluations": evaluations, "errors": errors}
+        return {**state, "evaluations": evaluations, "errors": errors, "evaluation_blocked": blocked}
 
     def save(state: MakAIState) -> MakAIState:
         if not state["evaluations"]:

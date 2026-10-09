@@ -12,14 +12,18 @@ from rich.text import Text
 if __package__:
     from .app.config import get_settings
     from .app.graph import build_graph
-    from .app.scrapers import SCRAPERS
+    from .app.profile import load_candidate_profile
+    from .app.search_plan import startup_searches, jobs_listing_urls
+    from .app.scrapers import SCRAPERS, DEFAULT_PORTALS
     from .app.scrapers.startupjobs import ScraperError, fetch_startupjobs
     from .app.storage import create_store
     from .app.turso import StorageConfigurationError, TursoEvaluationStore
 else:
     from app.config import get_settings
     from app.graph import build_graph
-    from app.scrapers import SCRAPERS
+    from app.profile import load_candidate_profile
+    from app.search_plan import startup_searches, jobs_listing_urls
+    from app.scrapers import SCRAPERS, DEFAULT_PORTALS
     from app.scrapers.startupjobs import ScraperError, fetch_startupjobs
     from app.storage import create_store
     from app.turso import StorageConfigurationError, TursoEvaluationStore
@@ -35,12 +39,13 @@ def _limit(value: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="MakAI: české portály, deduplikace, obohacení a LLM evaluace")
     parser.add_argument("--limit", type=_limit, default=15, help="Maximální počet nabídek na portál (1–100)")
-    parser.add_argument("--portals", nargs="+", choices=[*SCRAPERS, "all"], default=["startupjobs"],
-                        help="Zdroje nabídek; all vybere všechny portály")
+    parser.add_argument("--portals", nargs="+", choices=[*SCRAPERS, "all"], default=list(DEFAULT_PORTALS),
+                        help="Zdroje nabídek; výchozí je šest českých portálů, all přidá i StartupJobs")
     args = parser.parse_args(argv)
     console = Console()
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
     try:
+        profile = load_candidate_profile()
         settings = get_settings()
         store = create_store(settings)
         if not isinstance(store, TursoEvaluationStore):
@@ -52,7 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         source_errors = []
         for portal in portals:
             try:
-                found = (fetch_startupjobs(args.limit) if portal == "startupjobs"
+                found = (fetch_startupjobs(args.limit, searches=startup_searches(profile)) if portal == "startupjobs"
+                         else SCRAPERS[portal](listing_urls=jobs_listing_urls(profile)).fetch_jobs(args.limit) if portal == "jobs"
                          else SCRAPERS[portal]().fetch_jobs(args.limit))
                 offers.extend(found)
                 console.print(Text(f"{portal}: {len(found)} nabídek."))

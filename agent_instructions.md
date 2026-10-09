@@ -36,7 +36,7 @@ projekty, zaměstnavatele, roky, vzdělání, certifikace, produkční nasazení
 
 ## Ověřování podmínek
 
-- Brněnská pobočka nepotvrzuje možnost vykonávat pražskou pozici z Brna.
+- Pobočka v preferované lokalitě nepotvrzuje možnost vykonávat danou pozici z této lokality.
 - Anglicky napsaný inzerát sám neznamená každodenní pracovní angličtinu.
 - Rozlišuj fix, garantované složky a nenárokové bonusy.
 - Neznámá mzda je neověřená; nabídku automaticky nevyřazuj ani nevytvářej falešně přesné odhady.
@@ -59,7 +59,7 @@ Agent musí:
 2. Procházet pracovní portály i kariérní stránky zaměstnavatelů.
 3. Hledat napříč různými názvy profesí a obory.
 4. Aktivně objevovat netradiční příležitosti.
-5. Upřednostňovat Brno a reálně dostupné lokality.
+5. Upřednostňovat lokality uvedené v aktivním kandidátském profilu.
 6. Ověřovat aktivitu konkrétního inzerátu.
 7. Ukládat přímý odkaz na konkrétní nabídku.
 8. Preferovat originální kariérní stránky zaměstnavatele.
@@ -160,7 +160,7 @@ U každé relevantní nabídky agent zaznamená:
 - Jazykové požadavky.
 - Typ smlouvy.
 - Stabilita firmy.
-- Možnost práce z Brna.
+- Možnost práce z preferované lokality.
 - Rozvojové možnosti.
 
 **Výsledné hodnocení**
@@ -196,7 +196,7 @@ AI pozice vyžadující hluboký software engineering může být horší shoda 
 
 **Nezaměňovat kariérní růst s manažerským povýšením.**
 
-Kandidát chce odborný růst jako individual contributor.
+Požadovaný odborný nebo manažerský směr určuje aktivní profil.
 
 **Neoptimalizovat pouze na současnou mzdu.**
 
@@ -221,14 +221,14 @@ Agent má uchovávat historii inzerátů, jejich stav a případné podání př
 Vyhledávat pracovní příležitosti, které:
 
 1. Odpovídají současným schopnostem kandidáta nebo představují realistický rozvojový krok.
-2. Využívají jeho dosavadních přibližně 16 let profesní praxe.
+2. Využívají dosavadní zkušenosti uvedené v aktivním profilu.
 3. Nabízejí zajímavou, smysluplnou a různorodou práci.
-4. Umožňují další rozvoj v AI, automatizaci, business analýze, digitalizaci nebo příbuzných oblastech.
-5. Jsou dostupné především v Brně.
-6. Nevyžadují jako hlavní pracovní jazyk pokročilou mluvenou angličtinu.
+4. Umožňují další rozvoj v oblastech uvedených v aktivním profilu.
+5. Jsou dostupné v preferovaných lokalitách aktivního profilu.
+6. Odpovídají jazykovým možnostem a preferencím aktivního profilu.
 7. Mají přijatelnou finanční perspektivu.
 8. Nabízejí kvalitní zkušenosti využitelné i za několik let.
-9. Mohou vést k dlouhodobému odbornému růstu bez nutnosti přejít do managementu.
+9. Odpovídají požadovanému kariérnímu směru a pracovnímu stylu aktivního profilu.
 
 **Hlavní zásada:**
 

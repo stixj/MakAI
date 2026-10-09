@@ -60,7 +60,8 @@ def _search_members(client: httpx.Client, criteria: dict, size: int) -> Iterator
             return
 
 
-def fetch_startupjobs(limit: int = 15) -> list[RawJobOffer]:
+def fetch_startupjobs(limit: int = 15, *, searches: tuple[dict, ...] | None = None,
+                      accept_offer=None, skip_urls=None) -> list[RawJobOffer]:
     """Fetch at most limit current offers; persistent deduplication belongs to the graph.
 
     Rotate AI, Python and Development searches, deduplicate source IDs, and use
@@ -70,6 +71,10 @@ def fetch_startupjobs(limit: int = 15) -> list[RawJobOffer]:
     validate_limit(limit)
     if limit == 0:
         return []
+    skip_urls = skip_urls or set()
+    criteria_list = SEARCHES if searches is None else searches
+    if not criteria_list:
+        return []
     offers: list[RawJobOffer] = []
     seen: set[int] = set()
     exhausted: set[int] = set()
@@ -77,9 +82,9 @@ def fetch_startupjobs(limit: int = 15) -> list[RawJobOffer]:
     try:
         with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=20,
                           follow_redirects=False) as client:
-            streams = [_search_members(client, criteria, min(limit, 20)) for criteria in SEARCHES]
-            for index in cycle(range(len(SEARCHES))):
-                if len(exhausted) == len(SEARCHES) or len(offers) >= limit:
+            streams = [_search_members(client, criteria, min(limit, 20)) for criteria in criteria_list]
+            for index in cycle(range(len(criteria_list))):
+                if len(exhausted) == len(criteria_list) or len(offers) >= limit:
                     break
                 if index in exhausted:
                     continue
@@ -99,6 +104,8 @@ def fetch_startupjobs(limit: int = 15) -> list[RawJobOffer]:
                         continue
                     seen.add(source_id)
                     url = f"{BASE_URL}/nabidka/{source_id}/{slug}"
+                    if url in skip_urls:
+                        continue
                     detail = client.get(url)
                     if detail.status_code in {404, 410}:
                         continue
@@ -107,7 +114,7 @@ def fetch_startupjobs(limit: int = 15) -> list[RawJobOffer]:
                     if urlsplit(str(detail.url)).hostname != "www.startupjobs.cz":
                         raise ScraperError("Neočekávaná adresa detailu StartupJobs.")
                     offer = _parse_offer(detail.text, url, source_id)
-                    if offer is not None:
+                    if offer is not None and (accept_offer is None or accept_offer(offer)):
                         offers.append(offer)
                 except (KeyError, TypeError, ValueError, ValidationError):
                     invalid += 1

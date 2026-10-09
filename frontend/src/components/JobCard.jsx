@@ -53,7 +53,7 @@ export default function JobCard({ job }) {
         </details>
       </div>
       <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-border/30 px-4 py-3 text-[11px] text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />{formatDate(job.evaluatedAt)}</span>
+        <span className="inline-flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />Vyhodnoceno {formatDate(job.evaluatedAt)}</span>
         {job.demo ? <span>Smyšlená ukázka</span> : href && <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-semibold text-viatix-teal transition-colors hover:bg-viatix-teal/10" aria-label={'Otevřít inzerát: ' + offer.title}>Otevřít inzerát<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" /></a>}
       </footer>
     </article>

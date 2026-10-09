@@ -135,6 +135,38 @@ class TursoEvaluationStore:
             return False
         raise TursoError("Neplatný výsledek deduplikace Turso.")
 
+    def known_offer_identities(self) -> tuple[set[str], set[str]]:
+        """Read only saved identities, including every portal URL, in bounded pages."""
+        table = self._request({"type": "execute", "stmt": {
+            "sql": "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+            "args": [{"type": "text", "value": "makai_job_evaluations"}],
+        }})
+        if not table.get("rows"):
+            return set(), set()
+        urls, identities = set(), set()
+        offset = 0
+        while True:
+            result = self._request({"type": "execute", "stmt": {
+                "sql": "SELECT json_extract(offer, '$.url'), json_extract(offer, '$.canonical_id'), "
+                       "json_extract(offer, '$.sources') FROM makai_job_evaluations "
+                       "ORDER BY offer_id LIMIT 500 OFFSET ?",
+                "args": [{"type": "integer", "value": str(offset)}],
+            }})
+            rows = result["rows"]
+            for row in rows:
+                url, canonical, sources = [cell.get("value") for cell in row]
+                if url:
+                    urls.add(url)
+                if canonical:
+                    identities.add(canonical)
+                for source in json.loads(sources or "[]"):
+                    if isinstance(source, dict) and isinstance(source.get("url"), str):
+                        urls.add(source["url"])
+            if len(rows) < 500:
+                break
+            offset += 500
+        return urls, identities
+
     def save_evaluated_job(self, offer: JobOffer, evaluation: JobFitEvaluation) -> None:
         self.upsert_or_enrich_job(offer, evaluation)
 

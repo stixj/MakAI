@@ -56,10 +56,13 @@ export function decodeJobRows(rows) {
   }
   return { jobs, invalidCount };
 }
-export function filterJobs(jobs, { search = '', verdict = 'all', sort = 'score' } = {}) {
+export function filterJobs(jobs, { search = '', verdict = 'all', sort = 'score', historyPeriod = 'all', now = Date.now() } = {}) {
   const normalize = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('cs');
   const needle = normalize(search.trim());
+  const hours = { '24h': 24, '7d': 168, '30d': 720 }[historyPeriod];
+  const since = hours ? now - hours * 3600000 : null;
   return jobs.filter(job =>
+    (since == null || (parseTimestamp(job.evaluatedAt) >= since && parseTimestamp(job.evaluatedAt) <= now)) &&
     (verdict === 'all' || job.evaluation.verdict === verdict) &&
     normalize(job.offer.title + ' ' + job.offer.company).includes(needle)
   ).sort((a, b) => sort === 'newest'
@@ -77,4 +80,18 @@ export function formatDate(value) {
   return Number.isFinite(date.getTime())
     ? new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Europe/Prague' }).format(date)
     : 'Datum neuvedeno';
+}
+
+
+export function paginateJobs(jobs, page = 1, pageSize = 12) {
+  const pageCount = Math.max(1, Math.ceil(jobs.length / pageSize));
+  const current = Math.max(1, Math.min(page, pageCount));
+  return { jobs: jobs.slice((current - 1) * pageSize, current * pageSize), page: current,
+    pageCount, total: jobs.length, pageSize };
+}
+
+export function pageNumbers(page, pageCount) {
+  const numbers = [...new Set([1, pageCount, page - 1, page, page + 1])]
+    .filter(value => value >= 1 && value <= pageCount).sort((a, b) => a - b);
+  return numbers.flatMap((value, index) => index > 0 && value - numbers[index - 1] > 1 ? ['gap-' + value, value] : [value]);
 }

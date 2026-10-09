@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from datetime import UTC, datetime
+from collections.abc import Callable
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -65,13 +66,17 @@ class HtmlJobScraper(BaseScraper):
     def _parse_detail(self, html: str, url: str) -> RawJobOffer | None:
         return parse_job_detail(html, url, self.portal, allow_local_time=self.allow_local_time)
 
-    def fetch_jobs(self, limit: int) -> list[RawJobOffer]:
+    def fetch_jobs(self, limit: int, *, accept_offer: Callable | None = None,
+                   skip_urls: set[str] | None = None) -> list[RawJobOffer]:
         validate_limit(limit)
         if not limit:
             return []
         offers = []
         seen = set()
         invalid = 0
+        checked = 0
+        self.stats = {"knownUrls": 0, "scanLimitReached": False}
+        skip_urls = skip_urls or set()
         try:
             with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=20,
                               follow_redirects=False) as client:
@@ -79,7 +84,7 @@ class HtmlJobScraper(BaseScraper):
                     listing_url = start
                     visited = set()
                     for _ in range(10):
-                        if listing_url in visited or len(offers) >= limit:
+                        if listing_url in visited or len(offers) >= limit or checked >= 300:
                             break
                         visited.add(listing_url)
                         listing = self._get(client, listing_url)
@@ -89,11 +94,15 @@ class HtmlJobScraper(BaseScraper):
                         if not links and not re.search(r"(?:0\s+nabídek|žádné\s+nabídky)", soup.get_text(), re.I):
                             raise ScraperError(f"{self.portal}: výpis neobsahuje rozpoznatelné nabídky.")
                         for url in links:
-                            if len(offers) >= limit:
+                            if len(offers) >= limit or checked >= 300:
                                 break
                             if url in seen:
                                 continue
                             seen.add(url)
+                            if clean_url(url) in skip_urls:
+                                self.stats["knownUrls"] += 1
+                                continue
+                            checked += 1
                             response = self._get(client, url)
                             if response.status_code in {404, 410}:
                                 continue
@@ -107,7 +116,8 @@ class HtmlJobScraper(BaseScraper):
                                         "url": HttpUrl(url),
                                         "sources": [{"portal": self.portal, "url": url}],
                                     })
-                                    offers.append(offer)
+                                    if accept_offer is None or accept_offer(offer):
+                                        offers.append(offer)
                             except (KeyError, TypeError, ValueError):
                                 invalid += 1
                                 logger.warning("%s: přeskočen neplatný detail nabídky.", self.portal)
@@ -117,7 +127,8 @@ class HtmlJobScraper(BaseScraper):
                         listing_url = urljoin(listing_url, next_link["href"])
         except httpx.HTTPError as exc:
             raise ScraperError(f"Stažení {self.portal} selhalo: {type(exc).__name__}.") from None
-        if invalid and not offers:
+        self.stats["scanLimitReached"] = checked >= 300 and len(offers) < limit
+        if invalid and not offers and invalid == checked:
             raise ScraperError(f"{self.portal}: žádný z nalezených detailů nebyl validní.")
         return offers
 
@@ -208,3 +219,57 @@ class AtmoskopScraper(HtmlJobScraper):
             "unitText": salary.get("period"),
         }} if isinstance(salary, dict) else salary)
         return posting_to_offer(posting, url, self.portal)
+
+
+class PraceZaRohemScraper(HtmlJobScraper):
+    portal = "Práce za rohem"
+    domain = "pracezarohem.cz"
+    listing_urls = ("https://www.pracezarohem.cz/nabidky",)
+    detail_pattern = r"^/dl/jd/[^/]+$"
+
+    def _parse_detail(self, html: str, url: str) -> RawJobOffer | None:
+        soup = BeautifulSoup(html, "html.parser")
+        script = soup.select_one("#__NEXT_DATA__")
+        if script is None:
+            return super()._parse_detail(html, url)
+        detail = json.loads(script.get_text())["props"]["pageProps"]["advert"]
+        if detail["id"] != urlsplit(url).path.rstrip("/").split("/")[-1]:
+            raise ValueError("Unexpected Práce za rohem detail")
+        if detail.get("valid") is False:
+            return None
+        locations = detail.get("locations") or [detail.get("location", {})]
+        posting = {
+            "title": detail["title"], "description": detail["desc"],
+            "hiringOrganization": {"name": detail["company"]},
+            "jobLocation": [{"address": {"addressLocality": place["label"]}}
+                            for place in locations if isinstance(place, dict) and place.get("label")],
+            "baseSalary": detail.get("salaryDetailed") or detail.get("salary"),
+        }
+        # validSince contains only relative age labels, not a publication timestamp.
+        if detail.get("validEnd"):
+            posting["validThrough"] = datetime.fromtimestamp(detail["validEnd"], UTC).isoformat()
+        return posting_to_offer(posting, url, self.portal, source_id="pracezarohem-" + detail["id"])
+
+
+class DobraPraceScraper(HtmlJobScraper):
+    portal = "DobráPráce.cz"
+    domain = "dobraprace.cz"
+    listing_urls = ("https://www.dobraprace.cz/nabidka-prace/",)
+    detail_pattern = r"^/\d+-[^/]+\.html$"
+    allow_local_time = True
+
+    def _parse_detail(self, html: str, url: str) -> RawJobOffer | None:
+        offer = super()._parse_detail(html, url)
+        if offer is None:
+            return None
+        soup = BeautifulSoup(html, "html.parser")
+        body = soup.select_one(".job-detail-text main")
+        if body is None:
+            raise ValueError("Missing DobráPráce.cz full job description")
+        for node in body.select("script, style, form, .job-system-info"):
+            node.decompose()
+        text = body.get_text("\n", strip=True)
+        if not text:
+            raise ValueError("Empty DobráPráce.cz full job description")
+        # Its JSON-LD description is only a teaser; requirements and benefits are in main.
+        return offer.model_copy(update={"raw_description": text + "\n\n" + offer.raw_description})

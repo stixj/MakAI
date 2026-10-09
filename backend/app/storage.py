@@ -26,8 +26,9 @@ class EvaluationStore(Protocol):
 class JsonEvaluationStore:
     """Single-process local snapshot, replaced atomically after a successful write."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, merge_existing: bool = False) -> None:
         self.path = path
+        self.merge_existing = merge_existing
 
     def save(
         self, offers: Sequence[JobOffer],
@@ -41,6 +42,13 @@ class JsonEvaluationStore:
                 for offer in offers if offer.id in evaluations
             ],
         }
+        if self.merge_existing:
+            timestamp = payload["saved_at"]
+            old = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {"results": [], "saved_at": timestamp}
+            previous = {item["offer"]["id"]: {**item, "evaluated_at": item.get("evaluated_at", old["saved_at"])}
+                        for item in old["results"]}
+            previous.update({item["offer"]["id"]: {**item, "evaluated_at": timestamp} for item in payload["results"]})
+            payload["results"] = list(previous.values())
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temporary_path: Path | None = None
         try:

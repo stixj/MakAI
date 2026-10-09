@@ -50,6 +50,18 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(len(result["errors"]), 1)
         self.assertEqual(len(store.calls), 1)
 
+    def test_quota_failure_stops_remaining_offers_and_preserves_saved_results(self):
+        evaluator = Mock(side_effect=[demo_evaluate_job(sample_offers()[0]),
+                         EvaluationError("Gemini: vyčerpán denní limit", kind="daily_quota", stop_batch=True)])
+        third = JobOffer.model_validate(sample_offers()[1].model_dump() | {"id": "third", "title": "Jiná pozice", "url": "https://example.com/third", "canonical_id": "", "sources": []})
+        store = RecordingStore()
+        result = build_graph(evaluator=evaluator, store=store).invoke(initial_state([*sample_offers(), third]))
+        self.assertEqual(evaluator.call_count, 2)
+        self.assertEqual(result["saved_ids"], ["demo-ai-agent"])
+        self.assertEqual(result["evaluation_blocked"]["notEvaluated"], 2)
+        self.assertEqual(result["evaluation_blocked"]["kind"], "daily_quota")
+        self.assertEqual(len(result["errors"]), 1)
+
     def test_duplicate_ids_are_evaluated_once(self) -> None:
         offer = sample_offers()[0]
         evaluator = Mock(side_effect=demo_evaluate_job)

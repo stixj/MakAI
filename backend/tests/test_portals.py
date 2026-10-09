@@ -12,9 +12,9 @@ from backend import run_hunt
 from backend.app.demo import demo_evaluate_job, sample_offers
 from backend.app.graph import build_graph
 from backend.app.schemas import RawJobOffer
-from backend.app.scrapers import SCRAPERS
+from backend.app.scrapers import SCRAPERS, DEFAULT_PORTALS
 from backend.app.scrapers.base import BaseScraper, ScraperError
-from backend.app.scrapers.portals import AtmoskopScraper, JenPraceCzScraper, JobsCzScraper, PraceCzScraper
+from backend.app.scrapers.portals import AtmoskopScraper, JenPraceCzScraper, JobsCzScraper, PraceCzScraper, PraceZaRohemScraper, DobraPraceScraper
 from backend.app.turso import TursoEvaluationStore
 from backend.tests.test_turso import SQLiteHrana
 
@@ -56,11 +56,13 @@ class PortalTests(unittest.TestCase):
         cases = [(JobsCzScraper(), "https://www.jobs.cz/rpd/123/"),
                  (PraceCzScraper(), "https://www.prace.cz/nabidka/456/"),
                  (JenPraceCzScraper(), "https://www.jenprace.cz/nabidka/abc/pozice"),
-                 (AtmoskopScraper(), "https://www.atmoskop.cz/nabidka-prace/def")]
+                 (AtmoskopScraper(), "https://www.atmoskop.cz/nabidka-prace/def"),
+                 (PraceZaRohemScraper(), "https://www.pracezarohem.cz/dl/jd/PZR-123"),
+                 (DobraPraceScraper(), "https://www.dobraprace.cz/123-ai-specialist.html")]
         for scraper, url in cases:
             def handler(request):
                 if str(request.url).split("?")[0] == url:
-                    return httpx.Response(200, text=posting_html(url))
+                    return httpx.Response(200, text=posting_html(url) + '<div class="job-detail-text"><main>Automatizace procesů</main></div>')
                 return httpx.Response(200, text=f'<a href="{url}?rps=1">Pozice</a><a href="{url}">Pozice</a>')
             with self.subTest(portal=scraper.portal):
                 offers = self.fetch(scraper, handler)
@@ -74,6 +76,47 @@ class PortalTests(unittest.TestCase):
                 self.assertEqual(offer.published_at.isoformat(), "2026-10-01T00:00:00+02:00")
                 results.append(offer)
         self.assertEqual(len({offer.canonical_id for offer in results}), 1)
+
+
+    def test_requested_six_are_defaults(self):
+        self.assertEqual(DEFAULT_PORTALS, ("jobs", "pracezarohem", "dobraprace", "jenprace", "atmoskop", "prace"))
+        self.assertTrue(all(portal in SCRAPERS for portal in DEFAULT_PORTALS))
+
+    def test_rohem_native_description_and_expiry_without_invented_publication(self):
+        url = "https://www.pracezarohem.cz/dl/jd/PZR-123"
+        detail = {"id": "PZR-123", "title": "AI specialista", "company": "Česká firma",
+                  "desc": "<p>Požadujeme Python</p><script>bad()</script>", "valid": True,
+                  "validEnd": 4070908800, "validSince": {"ageGroupStr": "Jen pár hodin"},
+                  "location": {"label": "Brno"}, "salaryDetailed": "70 000 Kč hrubého"}
+        def response(request):
+            data = {"props": {"pageProps": {"advert": detail}}}
+            return httpx.Response(200, text=('<script id="__NEXT_DATA__">' + json.dumps(data).replace('</', '<\\/') + '</script>')
+                                  if str(request.url) == url else f'<a href="{url}">Pozice</a>')
+        offer = self.fetch(PraceZaRohemScraper(), response)[0]
+        self.assertIsNone(offer.published_at)
+        self.assertEqual((offer.company, offer.location, offer.salary_raw),
+                         ("Česká firma", "Brno", "70 000 Kč hrubého"))
+        self.assertIn("Požadujeme Python", offer.raw_description)
+        self.assertNotIn("bad()", offer.raw_description)
+        detail["valid"] = False
+        self.assertEqual(self.fetch(PraceZaRohemScraper(), response), [])
+        detail["valid"] = True
+        detail["validEnd"] = 946684800
+        self.assertEqual(self.fetch(PraceZaRohemScraper(), response), [])
+        detail["validEnd"] = 4070908800
+        detail["id"] = "PZR-other"
+        with self.assertRaises(ScraperError):
+            self.fetch(PraceZaRohemScraper(), response)
+
+    def test_dobra_keeps_full_requirements_and_local_timestamp(self):
+        url = "https://www.dobraprace.cz/123-ai-specialist.html"
+        html = posting_html(url, description="Úvod", datePosted="2026-10-01 13:38:57", validThrough="9999-12-31")
+        html += '<div class="job-detail-text"><main><h2>Požadujeme</h2><p>Python a angličtinu B2</p><h2>Nabízíme</h2><p>Home office</p></main></div>'
+        offer = self.fetch(DobraPraceScraper(), lambda request: httpx.Response(
+            200, text=html if str(request.url) == url else f'<a href="{url}">Pozice</a>'))[0]
+        self.assertIn("Python a angličtinu B2", offer.raw_description)
+        self.assertIn("Home office", offer.raw_description)
+        self.assertEqual(offer.published_at.isoformat(), "2026-10-01T13:38:57+02:00")
 
     def test_jobs_native_html_retains_unknown_publication_date(self):
         url = "https://www.jobs.cz/rpd/123/"
@@ -160,6 +203,26 @@ class PortalTests(unittest.TestCase):
 
 
 class MultiPortalCliTests(unittest.TestCase):
+    def test_cli_defaults_call_each_requested_source_once(self):
+        store = Mock(spec=TursoEvaluationStore)
+        scrapers = {key: Mock() for key in DEFAULT_PORTALS}
+        for scraper in scrapers.values():
+            scraper.return_value.fetch_jobs.return_value = []
+        graph = Mock()
+        graph.invoke.return_value = {"offers": [], "evaluations": {}, "errors": [],
+                                     "saved_ids": [], "skipped_duplicates": []}
+        with patch("backend.run_hunt.get_settings"), \
+             patch("backend.run_hunt.create_store", return_value=store), \
+             patch("backend.run_hunt.build_graph", return_value=graph), \
+             patch("backend.run_hunt.fetch_startupjobs") as startup, \
+             patch.dict(run_hunt.SCRAPERS, scrapers), \
+             patch("backend.run_hunt.Console", return_value=Console(file=io.StringIO())):
+            self.assertEqual(run_hunt.main(["--limit", "1"]), 0)
+        startup.assert_not_called()
+        for scraper in scrapers.values():
+            scraper.return_value.fetch_jobs.assert_called_once_with(1)
+
+
     def test_cli_continues_after_source_failure_and_reports_it(self):
         store = TursoEvaluationStore("libsql://example.turso.io", "test-only")
         engine = SQLiteHrana()

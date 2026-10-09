@@ -1,0 +1,71 @@
+# Kandidátský profil
+
+## Strukturované preference
+
+```json
+{
+  "target_roles": [
+    "Účetní",
+    "Financial Accountant"
+  ],
+  "skills": [
+    "Účetnictví a fakturace",
+    "Microsoft Excel"
+  ],
+  "working_style": [
+    "Samostatná odborná práce a spolupráce s týmem"
+  ],
+  "preferences": [
+    "Stabilní zaměstnavatel",
+    "Možnost dalšího vzdělávání"
+  ],
+  "no_go_criteria": [],
+  "location_preferences": [
+    "Praha; kancelář nebo hybridní režim"
+  ],
+  "language_preferences": [
+    "Čeština; angličtina pro dokumentaci a občasnou písemnou komunikaci"
+  ],
+  "salary": {
+    "monthly_gross_target_czk": [
+      50000,
+      60000
+    ],
+    "exceptional_minimum_czk": 35000,
+    "standard_minimum_czk": 40000,
+    "interesting_minimum_czk": 45000,
+    "long_term_target_czk": 70000,
+    "long_term_horizon_years": 3,
+    "historical_fixed_monthly_czk": null,
+    "notes": "Hrubá měsíční mzda v Kč. Uvedené částky jsou ukázka; nahraďte je vlastními preferencemi."
+  },
+  "evidence_limitations": [
+    "Toto je vzorový profil. Nahraďte ukázkové role, dovednosti, preference i mzdy vlastními údaji.",
+    "Přesná data zaměstnání, vzdělání a certifikace ověřte podle vlastního CV."
+  ]
+}
+```
+
+## Profesní shrnutí
+
+[DOPLŇTE: váš profesní směr, dosavadní praxi a co hledáte v další práci.]
+
+## Dosavadní zkušenosti
+
+[DOPLŇTE: skutečné role, pracovní náplň a období. Rozlišujte doložená fakta od odhadů.]
+
+## Projekty a výsledky
+
+[DOPLŇTE: konkrétní projekty, vlastní podíl, dokončení nebo nasazení. Čísla uvádějte jen pokud jsou doložená.]
+
+## Vzdělání a certifikace
+
+[DOPLŇTE: údaje podle vlastního CV, nebo uveďte, že zatím nejsou doložené.]
+
+## Co se chci naučit
+
+[DOPLŇTE: zamýšlený rozvoj a realistické kariérní kroky.]
+
+## Další podmínky a nejistoty
+
+[DOPLŇTE: pracovní režim, cestování, omezení a informace vyžadující ověření.]
