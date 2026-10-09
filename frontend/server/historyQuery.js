@@ -14,8 +14,8 @@ export function historyQuery(url) {
   const search = params.get('search') ?? '';
   const since = params.get('since');
   const collection = params.get('collection') ?? 'active';
-  if (!['active', 'saved', 'applied', 'hidden', 'all'].includes(collection) || !Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
-      !['all', ...Object.keys(VERDICTS)].includes(verdict) || !['score', 'newest'].includes(sort) ||
+  if (!['active', 'saved', 'priority', 'applied', 'hidden', 'all'].includes(collection) || !Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
+      !['all', ...Object.keys(VERDICTS)].includes(verdict) || !['score', 'newest', 'priority'].includes(sort) ||
       !['all', '24h', '7d', '30d'].includes(historyPeriod) || search.length > 200 ||
       (since !== null && (!/^\d{4}-\d{2}-\d{2}T/.test(since) || !Number.isFinite(Date.parse(since))))) {
     throw new Error('Neplatné filtry nebo stránka historie.');

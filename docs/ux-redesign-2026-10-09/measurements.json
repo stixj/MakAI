@@ -1,0 +1,49 @@
+{
+  "evidence": [
+    {
+      "scenario": "desktop",
+      "width": 1440,
+      "scrollWidth": 1436,
+      "height": 1142,
+      "firstCardTop": 580.65625,
+      "firstCardHeight": 433
+    },
+    {
+      "scenario": "mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 2105,
+      "firstCardTop": 643.65625,
+      "firstCardHeight": 400.25
+    },
+    {
+      "scenario": "offer-detail",
+      "width": 1440,
+      "scrollWidth": 1436,
+      "height": 1107
+    },
+    {
+      "scenario": "offer-mobile",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 1463
+    },
+    {
+      "scenario": "application",
+      "width": 390,
+      "scrollWidth": 390,
+      "height": 1918
+    },
+    {
+      "check": "draft close/reopen and reload",
+      "passed": true
+    },
+    {
+      "scenario": "profile",
+      "width": 1440,
+      "scrollWidth": 1440,
+      "height": 1000
+    }
+  ],
+  "errors": []
+}

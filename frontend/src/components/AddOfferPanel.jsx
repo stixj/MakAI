@@ -1,14 +1,17 @@
+import { clearDraft, useDraftState, useUnsavedWarning } from '../hooks/useDraft.js';
 import { useState } from 'react';
 import { profileApi } from '../lib/profileApi.js';
 import { today } from '../lib/applications.js';
 export default function AddOfferPanel({profileId,onClose,onAdded,onDuplicate}) {
-  const [offer,setOffer]=useState({url:'',title:'',company:'',location:'',salary_raw:'',raw_description:''});
-  const [applied,setApplied]=useState(false),[appliedAt,setAppliedAt]=useState(today());
-  const [salaryExpectation,setSalaryExpectation]=useState(''),[reactionDetails,setReactionDetails]=useState('');
+  const draftKey='new-offer:'+profileId;
+  const [offer,setOffer]=useDraftState(draftKey,{url:'',title:'',company:'',location:'',salary_raw:'',raw_description:''});
+  const [applied,setApplied]=useDraftState(draftKey+':applied',false),[appliedAt,setAppliedAt]=useDraftState(draftKey+':date',today());
+  const [salaryExpectation,setSalaryExpectation]=useDraftState(draftKey+':salary',''),[reactionDetails,setReactionDetails]=useDraftState(draftKey+':reaction','');
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[duplicate,setDuplicate]=useState(null);
   const field=(key,label,required=false)=> <label className="block text-sm">{label}<input value={offer[key]} required={required} maxLength={300} onChange={e=>{setOffer({...offer,[key]:e.target.value});setDuplicate(null);}} className="mt-1 w-full rounded-xl border border-viatix-line bg-white p-3" /></label>;
   async function preview(){setBusy(true);setError('');try{const result=await profileApi('/api/applications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'preview',profileId,url:offer.url})});setOffer(previous=>({...previous,...Object.fromEntries(Object.entries(result.offer).filter(([,value])=>value))}));setNotice(result.notice);}catch(e){setError(e.message);}finally{setBusy(false);}}
-  async function save(e){e.preventDefault();setBusy(true);setError('');try{const result=await profileApi('/api/applications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',profileId,offer,applied,appliedAt:applied?appliedAt||null:null,salaryExpectation,reactionDetails})});if(result.duplicate){setDuplicate(result);return;}onAdded(result,applied);}catch(e){setError(e.message);}finally{setBusy(false);}}
+  async function save(e){e.preventDefault();setBusy(true);setError('');try{const result=await profileApi('/api/applications',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'add',profileId,offer,applied,appliedAt:applied?appliedAt||null:null,salaryExpectation,reactionDetails})});if(result.duplicate){setDuplicate(result);return;}[draftKey,draftKey+':date',draftKey+':applied',draftKey+':salary',draftKey+':reaction'].forEach(clearDraft);onAdded(result,applied);}catch(e){setError(e.message);}finally{setBusy(false);}}
+  useUnsavedWarning(Object.values(offer).some(value=>value.trim()));
   return <section aria-label="Přidat nabídku" className="mt-6 rounded-2xl border border-viatix-line bg-viatix-sand2 p-5">
     <div className="flex items-center justify-between gap-3"><h2 className="font-display text-xl font-semibold">Přidat nabídku</h2><button type="button" className="button-secondary" onClick={onClose} disabled={busy}>Zavřít</button></div>
     <p className="mt-2 text-sm text-muted-foreground">Vlož odkaz nebo nabídku vyplň ručně. Uložení ani načtení odkazu nevyužívá AI.</p>

@@ -1,5 +1,5 @@
 import { normalizeJobState } from '../src/lib/jobState.js';
-import { applicationTables, offerRow, appliedStateChanged, assertActive } from './applicationStore.js';
+import { applicationTables, offerRow, appliedStateChanged, assertActive, readOfferInterest, writeOfferInterest } from './applicationStore.js';
 import { parseJobRow } from '../src/lib/jobs.js';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_SCHEDULE, validateSchedule, validateHunt, nextOccurrence, clockParts } from '../src/lib/schedule.js';
@@ -57,29 +57,31 @@ export class CloudStore {
   }
   async jobStates(profileId) {
     profileTable(profileId);
-    return (await this.client.execute({ sql: 'SELECT offer_id,saved,applied,hidden FROM makai_job_states WHERE profile_id=?', args: [profileId] })).rows;
+    return (await this.client.execute({ sql: 'SELECT s.offer_id,s.saved,s.applied,s.hidden,i.priority FROM makai_job_states s LEFT JOIN makai_offer_interest i ON i.profile_id=s.profile_id AND i.offer_id=s.offer_id WHERE s.profile_id=? UNION ALL SELECT i.offer_id,0,0,0,i.priority FROM makai_offer_interest i WHERE i.profile_id=? AND NOT EXISTS (SELECT 1 FROM makai_job_states s WHERE s.profile_id=i.profile_id AND s.offer_id=i.offer_id)', args: [profileId,profileId] })).rows;
   }
   async updateJobState(input) {
     const keys = Object.keys(input?.changes || {});
     if (typeof input?.profileId !== 'string' || !/^[a-f0-9]{64}$/.test(input.profileId) ||
         typeof input?.offerId !== 'string' || !input.offerId.trim() || input.offerId.length > 500 ||
-        !keys.length || keys.some(key => !['saved','applied','hidden'].includes(key) || typeof input.changes[key] !== 'boolean'))
+        !keys.length || keys.some(key => !['saved','applied','hidden','priority'].includes(key) || typeof input.changes[key] !== 'boolean'))
       throw new UserError('Neplatná změna stavu nabídky.');
     return this.transaction(async tx => {
       const control = await this.control(tx);
       if (control.profile_id !== input.profileId) throw new UserError('Aktivní profil se změnil. Obnov přehled.', 409);
       await offerRow(tx, input.profileId, input.offerId);
       if (keys.includes('applied')) await appliedStateChanged(this, tx, input.profileId, input.offerId, input.changes.applied);
-      await tx.execute({ sql: `INSERT INTO makai_job_states(profile_id,offer_id,saved,applied,hidden,updated_at)
-        VALUES(?,?,?,?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET ${keys.map(key => key + '=excluded.' + key).join(',')}, updated_at=excluded.updated_at`,
+      if(keys.includes('priority'))await writeOfferInterest(tx,input.profileId,input.offerId,{priority:input.changes.priority});
+      const stateKeys=keys.filter(key=>key!=='priority');
+      if(stateKeys.length)await tx.execute({ sql: `INSERT INTO makai_job_states(profile_id,offer_id,saved,applied,hidden,updated_at)
+        VALUES(?,?,?,?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET ${stateKeys.map(key => key + '=excluded.' + key).join(',')}, updated_at=excluded.updated_at`,
         args: [input.profileId, input.offerId, Number(input.changes.saved || false), Number(input.changes.applied || false), Number(input.changes.hidden || false), this.now().toISOString()] });
       const row = (await tx.execute({ sql: 'SELECT saved,applied,hidden FROM makai_job_states WHERE profile_id=? AND offer_id=?', args: [input.profileId, input.offerId] })).rows[0];
-      return { offerId: input.offerId, profileId: input.profileId, state: normalizeJobState(row) };
+      return { offerId: input.offerId, profileId: input.profileId, state: normalizeJobState({...row,priority:(await readOfferInterest(tx,input.profileId,input.offerId)).priority}) };
     });
   }
   async profiles(db = this.client) {
     return (await db.execute('SELECT payload FROM makai_profiles ORDER BY id')).rows
-      .map(row => { const profile = JSON.parse(row.payload); return { id: profile.id, name: profile.name }; });
+      .map(row => { const profile = JSON.parse(row.payload); return { id: profile.id, name: profile.name, revision: profile.revision || 0 }; });
   }
   async activateProfile(id) {
     // Validates the ID before any query or identifier interpolation.
@@ -99,12 +101,21 @@ export class CloudStore {
     });
   }
   async saveProfile(payload) {
-    const profile = parseCloudProfile(payload.name, payload.content);
+    let profile = parseCloudProfile(payload.name, payload.content);
     return this.transaction(async tx => {
       await this.expire(tx);
       if ((await tx.execute("SELECT id FROM makai_runs WHERE status IN ('queued','running','stopping')")).rows.length)
         throw new UserError('Nejdřív dokonči nebo zastav hledání.', 409);
       const control = await this.control(tx);
+      if (payload.replaceProfileId) {
+        profileTable(payload.replaceProfileId);
+        if (control.profile_id !== payload.replaceProfileId) throw new UserError('Aktivní profil se změnil. Načti profil znovu.', 409);
+        const current = await this.profile(tx);
+        if (!Number.isSafeInteger(payload.expectedRevision) || payload.expectedRevision !== (current.revision || 0)) throw new UserError('Profil se mezitím změnil. Načti aktuální verzi před uložením.', 409);
+        const changed = current.content !== profile.content;
+        profile = { ...profile, id: current.id, contentId: profile.id, revision: (current.revision || 0) + Number(changed), updatedAt: changed ? this.now().toISOString() : current.updatedAt };
+      }
+
       const schedule = { ...JSON.parse(control.schedule), enabled: false };
       await tx.execute({ sql: 'INSERT INTO makai_profiles(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload', args: [profile.id, json(profile)] });
       await tx.execute({ sql: 'UPDATE makai_control SET profile_id=?, schedule=?, next_at=NULL, revision=revision+1 WHERE id=1', args: [profile.id, json(schedule)] });
@@ -150,10 +161,15 @@ export class CloudStore {
     return this.transaction(async tx => {
       await assertActive(this, tx, input?.profileId); await this.expire(tx);
       const row = await offerRow(tx, input.profileId, input.offerId);
-      if (!row.manual) throw new UserError('Tato nabídka už má hodnocení.');
-      if (row.evaluation) throw new UserError('Nabídka už byla vyhodnocena.',409);
+      // An explicit user request may refresh an existing evaluation after profile/offer changes.
       const edit = (await tx.execute({sql:'SELECT payload,revision FROM makai_offer_edits WHERE profile_id=? AND offer_id=?',args:[input.profileId,input.offerId]})).rows[0];
       const offer = {...JSON.parse(row.offer),...(edit?JSON.parse(edit.payload):{})};
+      if (row.evaluation) {
+        const profile = await this.profile(tx);
+        const basis = (await tx.execute({sql:'SELECT offer_revision FROM makai_offer_evaluation_versions WHERE profile_id=? AND offer_id=?',args:[input.profileId,input.offerId]})).rows[0];
+        const beforeProfile = profile.updatedAt && Date.parse(row.evaluated_at?.includes('T') ? row.evaluated_at : row.evaluated_at?.replace(' ','T')+'Z') < Date.parse(profile.updatedAt);
+        if (!beforeProfile && Number(edit?.revision || 0) <= Number(basis?.offer_revision || 0)) throw new UserError('Hodnocení už odpovídá aktuálním údajům.',409);
+      }
       if (!offer.raw_description.trim()) throw new UserError('Pro AI hodnocení doplň text inzerátu.');
       return this.queue(tx, { profileId: input.profileId, maxEvaluations: 1 }, 'evaluation', null, null, { ...offer, url: offer.url || 'https://makai.invalid/manual/' + offer.id },Number(edit?.revision||0));
     });
@@ -189,7 +205,7 @@ export class CloudStore {
       await tx.execute({ sql: "UPDATE makai_runs SET status='running', started_at=?, lease_until=?, lease_token=? WHERE id=? AND status='queued'",
         args: [now.toISOString(), new Date(now.getTime() + 45 * 60000).toISOString(), token, run.id] });
       const profile = JSON.parse((await tx.execute({ sql: 'SELECT payload FROM makai_profiles WHERE id=?', args: [run.profile_id] })).rows[0].payload);
-      return { id: run.id, token, profile: { id: profile.id, content: profile.content }, options: JSON.parse(run.options) };
+      return { id: run.id, token, profile: { id: profile.id, contentId: profile.contentId || profile.id, content: profile.content }, options: JSON.parse(run.options) };
     });
   }
   async workerStatus(id, token) {
@@ -210,7 +226,10 @@ export class CloudStore {
       if (options.evaluationOffer && status==='done' && run.status==='running') {
         const offer=options.evaluationOffer;
         parseJobRow({offer_id:offer.id,offer:JSON.stringify(offer),evaluation:JSON.stringify(result.evaluation),evaluated_at:this.now().toISOString()});
-        const update=await tx.execute({sql:'UPDATE makai_manual_offers SET evaluation=?,evaluated_at=? WHERE profile_id=? AND offer_id=? AND evaluation IS NULL',args:[JSON.stringify(result.evaluation),this.now().toISOString(),run.profile_id,offer.id]});
+        const original = await offerRow(tx, run.profile_id, offer.id);
+        const update = original.manual
+          ? await tx.execute({sql:'UPDATE makai_manual_offers SET evaluation=?,evaluated_at=? WHERE profile_id=? AND offer_id=?',args:[JSON.stringify(result.evaluation),this.now().toISOString(),run.profile_id,offer.id]})
+          : await tx.execute({sql:'UPDATE '+profileTable(run.profile_id)+' SET evaluation=?,evaluated_at=? WHERE offer_id=?',args:[JSON.stringify(result.evaluation),this.now().toISOString(),offer.id]});
         if (!update.rowsAffected) throw new UserError('Nabídka už byla změněna.',409);
         await tx.execute({sql:'INSERT INTO makai_offer_evaluation_versions(profile_id,offer_id,offer_revision) VALUES(?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET offer_revision=excluded.offer_revision',args:[run.profile_id,offer.id,Number(options.evaluationOfferRevision||0)]});
       }

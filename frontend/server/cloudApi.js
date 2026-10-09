@@ -1,3 +1,4 @@
+import {translateOffer} from './offerTranslation.js';
 import { opportunityRequest, opportunityHistory } from './opportunityApi.js';
 import { builderConfig, analyseCv, generateDraft } from './profileBuilder.js';
 import { createClient } from '@libsql/client/http';
@@ -98,7 +99,7 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         if (Number(quota.rows[0].count) > 20) return send(429, { error: 'Dnešní limit tvorby profilu byl dosažen. Pokračuj zítra.' });
         return send(200, await (route === 'profile-cv' ? analyseCv(payload, env, fetcher) : generateDraft(payload, env, fetcher)));
       }
-      if (route === 'applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher) }));
+      if (route === 'applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher), translate: payload => translateOffer(store,payload,env,fetcher) }));
       if (route === 'profile') {
         if (request.method === 'GET') return send(200, new URL(request.url, 'https://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
         if (request.method === 'PUT') return send(200, await store.activateProfile((await readBody(request)).id));

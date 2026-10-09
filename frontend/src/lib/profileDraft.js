@@ -38,3 +38,9 @@ export function draftProfileContent(draft) {
   const context = draft.context.replace(new RegExp('^' + fence, 'gm'), String.fromCharCode(92, 96, 92, 96, 92, 96));
   return '# Kandidátský profil\n\n' + fence + 'json\n' + JSON.stringify(cleaned, null, 2) + '\n' + fence + '\n\n' + context + '\n';
 }
+
+export function manualProfileDraft(input) {
+  const a = questionnairePayload(input);
+  const lines = value => value.split(/\n/).map(item => item.trim()).filter(Boolean);
+  return { profile: { target_roles: lines(a.career_goal), skills: lines(a.skills), location_preferences: lines(a.location), language_preferences: lines(a.languages), working_style: lines(a.working_style), preferences: [], no_go_criteria: lines(a.no_go), evidence_limitations: ['Profil je sestavený ručně z odpovědí kandidáta. Údaje nebyly ověřeny proti samostatnému CV.'], salary: { exceptional_minimum_czk: a.salary_minimum, standard_minimum_czk: a.salary_minimum, interesting_minimum_czk: a.salary_target_lower, monthly_gross_target_czk: [a.salary_target_lower,a.salary_target_upper], long_term_target_czk:null,long_term_horizon_years:null,historical_fixed_monthly_czk:null,notes:'Hrubá měsíční mzda v Kč podle odpovědí kandidáta.' } }, context: '## Dosavadní zkušenosti\n\n' + a.experience, missingInformation: [], provider: 'Ručně' };
+}

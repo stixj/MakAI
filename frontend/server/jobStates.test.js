@@ -26,10 +26,10 @@ test('independent reversible states persist without changing offers, scores or e
   await patch({ saved: true });
   const anotherServer = new CloudStore(client);
   const applied = await anotherServer.updateJobState({ profileId, offerId: '0', changes: { applied: true } });
-  assert.deepEqual(applied.state, { saved: true, applied: true, hidden: false });
-  assert.deepEqual((await patch({ hidden: true })).state, { saved: true, applied: true, hidden: true });
-  assert.deepEqual((await patch({ hidden: false })).state, { saved: true, applied: true, hidden: false });
-  assert.deepEqual((await patch({ saved: false, applied: false })).state, { saved: false, applied: false, hidden: false });
+  assert.deepEqual(applied.state, { saved: true, applied: true, hidden: false, priority: false });
+  assert.deepEqual((await patch({ hidden: true })).state, { saved: true, applied: true, hidden: true, priority: false });
+  assert.deepEqual((await patch({ hidden: false })).state, { saved: true, applied: true, hidden: false, priority: false });
+  assert.deepEqual((await patch({ saved: false, applied: false })).state, { saved: false, applied: false, hidden: false, priority: false });
   assert.deepEqual((await client.execute('SELECT * FROM ' + table + ' ORDER BY offer_id')).rows, before);
 });
 test('state writes reject missing offers, invalid fields and stale profile selections', async t => {
@@ -71,8 +71,8 @@ test('online and localhost share filtering before pagination; hidden offers rema
   assert.equal((await call(local, '/api/jobs?view=paged&collection=saved')).body.total, 13);
   const hidden = await call(local, '/api/jobs?view=paged&collection=hidden');
   assert.equal(hidden.body.total, 1);
-  assert.deepEqual(hidden.body.rows[0].state, { saved: true, applied: true, hidden: true });
-  await call(local, '/api/jobs', 'PATCH', { profileId, offerId: '0', changes: { hidden: false } });
+  assert.deepEqual(hidden.body.rows[0].state, { saved: true, applied: true, hidden: true, priority: false });
+  await call(local, '/api/jobs', 'PATCH', { profileId, offerId: '0', changes: { hidden: false, priority: false } });
   assert.equal((await call(online, '/api/jobs?view=paged&collection=applied', 'GET', undefined, true)).body.total, 1);
   assert.equal((await call(local, '/api/jobs?view=paged&collection=saved')).body.total, 14);
   assert.equal((await call(local, '/api/jobs?view=paged&collection=unknown')).status, 400);

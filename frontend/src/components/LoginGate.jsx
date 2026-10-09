@@ -1,3 +1,4 @@
+import { clearAllDrafts } from '../hooks/useDraft.js';
 import { cloneElement, useEffect, useState } from 'react';
 import { ChevronDown, LockKeyhole } from 'lucide-react';
 import { profileApi } from '../lib/profileApi.js';
@@ -6,6 +7,7 @@ export default function LoginGate({ children }) {
   const [authenticated, setAuthenticated] = useState(false);
   const [checking, setChecking] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [changing, setChanging] = useState(false);
@@ -33,7 +35,7 @@ export default function LoginGate({ children }) {
   }
   async function logout() {
     setBusy(true);
-    try { await profileApi('/api/session', { method: 'DELETE' }); setAuthenticated(false); closeChange(); setNotice(''); }
+    try { await profileApi('/api/session', { method: 'DELETE' }); clearAllDrafts(); setAuthenticated(false); closeChange(); setNotice(''); }
     catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   }
@@ -58,11 +60,12 @@ export default function LoginGate({ children }) {
     </fieldset></form></section>}
     {error && <p role="alert" className="mx-auto mt-3 max-w-6xl px-5 text-red-700">{error}</p>}{notice && <p role="status" className="mx-auto mt-3 max-w-6xl px-5 text-viatix-teal">{notice}</p>}{cloneElement(children, { accountControls: <details className="relative" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}><summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-viatix-line px-3 py-2 text-sm font-medium text-viatix-teal">Účet<ChevronDown className="h-4 w-4" aria-hidden="true" /></summary><nav aria-label="Nastavení účtu" className="absolute right-0 top-full z-20 mt-2 w-48 rounded-xl border border-viatix-line bg-viatix-sand2 p-2 shadow-lg"><button type="button" className="w-full rounded-lg px-3 py-3 text-left text-sm hover:bg-viatix-teal/5" disabled={busy} onClick={event => { event.currentTarget.closest('details').open = false; setChanging(true); setError(''); setNotice(''); }}>Změnit heslo</button><button type="button" className="w-full rounded-lg px-3 py-3 text-left text-sm hover:bg-viatix-teal/5" disabled={busy} onClick={logout}>Odhlásit se</button></nav></details> })}</>;
   return <main className="mx-auto flex min-h-screen max-w-lg items-center px-5 py-12"><section className="w-full rounded-3xl border border-viatix-line bg-viatix-sand2 p-7">
-    <img src={import.meta.env.BASE_URL + 'brand/makai-logo-v1.png'} alt="MakAI" className="mb-8 w-40" />
+    <img src={import.meta.env.BASE_URL + 'brand/makai-logo-web.png'} alt="MakAI" className="mb-8 w-40" />
     <LockKeyhole className="mb-4 h-7 w-7 text-viatix-teal" aria-hidden="true" />
     <h1 className="font-display text-2xl font-semibold">{setup ? 'Dokončení připojení' : 'Tvůj pracovní přehled'}</h1>
     <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{checking ? 'Ověřuji přihlášení…' : setup ? 'Aplikace je připravená. Pro online hledání je potřeba dokončit serverové nastavení.' : 'Přihlas se pro nabídky, úpravu profilu a automatické hledání.'}</p>
-    {!checking && !setup && <form onSubmit={login} className="mt-6 space-y-4"><label className="block text-sm">Heslo<input autoComplete="current-password" type="password" required value={password} onChange={event => setPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3" /></label><button className="button-primary" disabled={busy}>{busy ? 'Přihlašuji…' : 'Přihlásit se'}</button></form>}
+    {!checking && !setup && <form onSubmit={login} className="mt-6 space-y-4"><label className="block text-sm">Heslo<input autoComplete="current-password" type={showPassword ? 'text' : 'password'} required value={password} onChange={event => setPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3" /></label><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showPassword} onChange={e => setShowPassword(e.target.checked)} />Zobrazit heslo</label><button className="button-primary" disabled={busy}>{busy ? 'Přihlašuji…' : 'Přihlásit se'}</button></form>}
+    {!checking && !setup && <details className="mt-5 text-sm text-muted-foreground"><summary className="cursor-pointer py-2 text-viatix-teal">Nemůžu se přihlásit</summary><p className="mt-2 leading-relaxed">Pokud heslo neznáš nebo jsi ho zapomněl/a, požádej správce svého MakAI o obnovení přístupu.</p></details>}
     {setup && <button className="button-secondary mt-5" onClick={() => window.location.reload()}>Ověřit připojení znovu</button>}
     {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
   </section></main>;

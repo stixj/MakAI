@@ -14,15 +14,15 @@ export function builderConfig(env) {
   const gemini = choice === 'gemini' || (choice === 'auto' && Boolean(env.GEMINI_API_KEY));
   return { configured: Boolean(gemini ? env.GEMINI_API_KEY : env.OPENAI_API_KEY), provider: gemini ? 'Gemini' : 'OpenAI', model: gemini ? env.PROFILE_GEMINI_MODEL || env.GEMINI_MODEL || 'gemini-3.5-flash' : env.OPENAI_MODEL || 'gpt-4o-mini' };
 }
-async function structured(env, name, schema, instruction, data, fetcher) {
+export async function structured(env, name, schema, instruction, data, fetcher, {system = SYSTEM, maxTokens = 6000} = {}) {
   const config = builderConfig(env);
   if (!config.configured) throw new UserError('AI tvorba profilu zatím není připojená.', 503);
   const gemini = config.provider === 'Gemini';
   if (!/^[a-zA-Z0-9_.-]+$/.test(config.model)) throw new UserError('Zkontroluj nastavení AI modelu.', 503);
   const url = gemini ? `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent` : 'https://api.openai.com/v1/responses';
   const headers = gemini ? { 'x-goog-api-key': env.GEMINI_API_KEY } : { Authorization: `Bearer ${env.OPENAI_API_KEY}` };
-  const body = gemini ? { systemInstruction: { parts: [{ text: SYSTEM + instruction }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: 8192 } }
-    : { model: config.model, store: false, max_output_tokens: 6000, input: [{ role: 'system', content: SYSTEM + instruction }, { role: 'user', content: JSON.stringify(data) }], text: { format: { type: 'json_schema', name, schema, strict: true } } };
+  const body = gemini ? { systemInstruction: { parts: [{ text: system + instruction }] }, contents: [{ role: 'user', parts: [{ text: JSON.stringify(data) }] }], generationConfig: { responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: Math.max(8192,maxTokens) } }
+    : { model: config.model, store: false, max_output_tokens: maxTokens, input: [{ role: 'system', content: system + instruction }, { role: 'user', content: JSON.stringify(data) }], text: { format: { type: 'json_schema', name, schema, strict: true } } };
   let response;
   try {
     response = await fetcher(url, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(90000), headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

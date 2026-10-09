@@ -181,3 +181,34 @@ Strukturovaný výstup: [OpenAI dokumentace](https://developers.openai.com/api/d
 Při vyčerpané denní kvótě API, chybě přístupu nebo nedostupnosti poskytovatele se AI dávka zastaví a zobrazí se konkrétní důvod. Dočasné chyby 5xx se zopakují nejvýše dvakrát s krátkým čekáním; kvóta 429 se automaticky neopakuje. Již úspěšná hodnocení se uloží. OpenAI fallback zůstává pouze výslovně povolenou volbou konfigurace.
 
 **Zastavit hledání** se zobrazí během běhu. DELETE /api/hunt ukončí Python proces a zablokuje nový běh i přepnutí profilu do potvrzení jeho konce. Již uložená historie zůstává; rozpracovaná neuložená hodnocení se při okamžitém zastavení zahodí. Požadavek již odeslaný AI poskytovateli může být účtován i po ukončení místního procesu. Zastavení je dostupné také po obnovení stránky přes stav běhu na místním serveru.
+
+## Úpravy UX — říjen 2026
+
+Rozhraní má sekce Nabídky, Moje přihlášky a Profil a hledání. Stručná karta
+otevře jednotný detail, který má vlastní hash URL. Filtry a stránka se uchovají
+v URL; návrat z detailu obnoví pozici seznamu.
+
+Rozepsané formuláře se uchovávají v sessionStorage této karty prohlížeče
+s platností 24 hodin a smažou se při potvrzeném uložení nebo odhlášení.
+Raw text CV se do tohoto úložiště neukládá. Koncept není automatické uložení
+do sdílené databáze; přihlášku potvrď tlačítkem Uložit změny.
+
+Úprava existujícího sdíleného profilu zachová jeho identitu a historii.
+Obsah má samostatný hash a revizi; zastaralé hodnocení lze na vyžádání obnovit.
+Python worker i Vercel API musí být aktualizované společně, aby byl protokol
+revizí a přehodnocení dostupný i v živém hledání. Režim VITE_LOCAL_STORAGE=files
+nadále používá původní souborový profilový registr.
+
+Průvodce lze dokončit ručně i bez AI. Mzdové hranice se nadále řídí současným
+povinným datovým kontraktem. Podrobný přehled změn a kontrol je v
+[UX změnách](../docs/ux-redesign-2026-10-09/CHANGES.md).
+
+### Osobní priority, překlad a evidence přihlášek
+
+Moje priorita je samostatné označení nabídky uživatelem; nemění AI skóre ani stav reakce. Funguje i před podáním přihlášky a má filtr a řazení před stránkováním. Důvod zájmu se ukládá samostatně s kontrolou revize.
+
+Překlad je dostupný v Celý inzerát a Původní nabídka. POST `/api/applications` s `action: translate` překládá pouze uložený text nabídky přes stávající serverovou AI konfiguraci. Výsledek se ukládá podle hashe textu; upravený text vyžaduje nový překlad. Originál se nepřepisuje. Limit: 20 000 znaků vstupu, 30 nových generování denně pro aplikaci, timeout 120 s. Zámek omezuje souběžné generování stejného překladu. AI transport je testován simulovanými odpověďmi; živé placené volání nebylo součástí automatické kontroly.
+
+Volitelné údaje přihlášky evidují podklady (názvy a verze souborů, žádný upload), způsob reakce, uzávěrku, slíbenou odpověď, kolo řízení, zadání a jeho odevzdání, otázky, nabídnuté podmínky a výsledek. Termíny odpovědi a zadání ovlivňují další kroky; automatické zprávy firmám se neodesílají. Rozbalovací porovnání zobrazuje přihlášky ve stavech nabídka spolupráce / přijato.
+
+Nové tabulky jsou aditivní (`makai_offer_interest`, `makai_offer_translations`). Před společným používáním těchto funkcí je potřeba nasadit nové online API; starší nasazené API doplňující pole přihlášek ještě nezná.

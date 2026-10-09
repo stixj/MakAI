@@ -19,3 +19,6 @@ agent_instructions.md
 **/dist/**
 **/dist-cloud/**
 **/fixtures/**
+
+# Review documentation and screenshots belong in Git, not in the deploy bundle
+docs/**

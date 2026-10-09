@@ -62,6 +62,7 @@ test('AI wizard offers CV and questionnaire paths and asks follow-ups before dra
     assert.ok(renderer.root.findAllByType('label').some(node => node.children.includes('Which project outcome can you document?')));
     act(() => button('Zpět').props.onClick()); act(() => button('Zpět').props.onClick());
     act(() => button('Vyplnit krátký dotazník').props.onClick());
-    assert.ok(renderer.root.findAllByType('textarea').every(node => !node.props.value));
+    assert.equal(renderer.root.findAllByType('textarea')[0].props.value, 'Project Manager');
+    assert.equal(renderer.root.findAllByType('textarea')[1].props.value, prefilled.experience);
   } finally { if (renderer) act(() => renderer.unmount()); await server.close(); globalThis.fetch = originalFetch; globalThis.FileReader = originalReader; }
 });

@@ -1,0 +1,43 @@
+[
+  {
+    "scenario": "desktop",
+    "width": 1440,
+    "scrollWidth": 1436,
+    "height": 2201,
+    "firstCardTop": 1189.15625,
+    "firstCardHeight": 745
+  },
+  {
+    "scenario": "mobile",
+    "width": 390,
+    "scrollWidth": 390,
+    "height": 4241,
+    "firstCardTop": 1671.15625,
+    "firstCardHeight": 745
+  },
+  {
+    "scenario": "application",
+    "width": 1440,
+    "scrollWidth": 1436,
+    "height": 2440
+  },
+  {
+    "check": "unsaved application close/reopen",
+    "dirtyWarningWasShown": true,
+    "reopenedNotes": ""
+  },
+  {
+    "scenario": "wizard",
+    "width": 1440,
+    "scrollWidth": 1436,
+    "height": 3111,
+    "firstCardTop": 2098.90625,
+    "firstCardHeight": 745
+  },
+  {
+    "scenario": "onboarding",
+    "width": 390,
+    "scrollWidth": 390,
+    "height": 2095
+  }
+]

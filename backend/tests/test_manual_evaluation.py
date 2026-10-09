@@ -37,6 +37,22 @@ class ManualEvaluationTests(unittest.TestCase):
         hunt.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())["evaluation"], result.model_dump())
 
+    def test_revised_profile_keeps_storage_identity_and_verifies_content_hash(self):
+        content = (ROOT / "frontend/public/templates/candidate-profile-template.json").read_text(encoding="utf-8")
+        payload = {"profile": {"id": "a" * 64, "contentId": hashlib.sha256(content.encode("utf-8")).hexdigest(), "content": content}, "options": {}}
+        from app.config import get_settings
+        from pydantic import SecretStr
+        settings = get_settings().model_copy(update={"database_url": SecretStr("libsql://example.turso.io"), "turso_auth_token": SecretStr("secret")})
+        output = io.StringIO()
+        with patch.object(sys, "argv", ["local_api.py", "cloud-hunt"]), patch.object(sys, "stdin", io.StringIO(json.dumps(payload))), patch.object(sys, "stdout", output), patch.object(local_api, "get_settings", return_value=settings), patch.object(local_api, "hunt", return_value={"found": 0}) as hunt:
+            self.assertEqual(local_api.main(), 0)
+        self.assertEqual(hunt.call_args.args[0]["profileId"], "a" * 64)
+        self.assertEqual(hunt.call_args.kwargs["store_override"].profile_id, "a" * 64)
+        payload["profile"]["content"] += "tampered"
+        with patch.object(sys, "argv", ["local_api.py", "cloud-hunt"]), patch.object(sys, "stdin", io.StringIO(json.dumps(payload))), patch.object(sys, "stdout", io.StringIO()), patch.object(local_api, "hunt") as hunt:
+            self.assertEqual(local_api.main(), 1)
+        hunt.assert_not_called()
+
     def test_edited_identities_are_scoped_without_network_or_paid_evaluation(self):
         store = ProfileTursoStore("libsql://example.turso.io", "secret", "a" * 64)
         edited = {"url": "https://example.com/revised", "canonical_id": "revised-key"}

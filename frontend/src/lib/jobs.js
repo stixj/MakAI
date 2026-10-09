@@ -70,7 +70,7 @@ export function filterJobs(jobs, { search = '', verdict = 'all', sort = 'score',
     (since == null || (parseTimestamp(job.evaluatedAt) >= since && parseTimestamp(job.evaluatedAt) <= now)) &&
     (verdict === 'all' || job.evaluation?.verdict === verdict) &&
     normalize(job.offer.title + ' ' + job.offer.company).includes(needle)
-  ).sort((a, b) => sort === 'newest'
+  ).sort((a, b) => sort === 'priority' ? Number(!!b.state?.priority)-Number(!!a.state?.priority) || (b.evaluation?.score ?? -1)-(a.evaluation?.score ?? -1) || a.offer.title.localeCompare(b.offer.title,'cs') : sort === 'newest'
     ? (parseTimestamp(b.evaluatedAt) || 0) - (parseTimestamp(a.evaluatedAt) || 0)
     : (b.evaluation?.score ?? -1) - (a.evaluation?.score ?? -1) || a.offer.title.localeCompare(b.offer.title, 'cs'));
 }

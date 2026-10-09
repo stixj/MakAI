@@ -1,3 +1,4 @@
+import { readDraft, writeDraft, clearDraft, useUnsavedWarning } from '../hooks/useDraft.js';
 import { useEffect, useState } from 'react';
 import { CalendarClock, Plus, X } from 'lucide-react';
 import { PORTALS, validateSchedule } from '../lib/schedule.js';
@@ -9,17 +10,18 @@ const input = 'mt-2 w-full rounded-xl border border-viatix-line bg-white/50 px-3
 export const displayTime = (value, timezone = 'Europe/Prague') => value
   ? new Intl.DateTimeFormat('cs-CZ', { timeZone: timezone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
 
-export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
+export default function SchedulePanel({ hasProfile, profileUpdated = false, onDirtyChange, onSearch, searchDisabled = false, draftKey = 'schedule' }) {
   const [checkedAt, setCheckedAt] = useState(Date.now);
   const [expanded, setExpanded] = useState(false);
-  const [draft, setDraft] = useState(null);
+  const [draft, setDraft] = useState(() => readDraft(draftKey));
   const [saved, setSaved] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
   async function load() {
-    try { const schedule = await profileApi('/api/schedule'); setSaved(schedule); setDraft(schedule); setDirty(false); setError(''); }
+    try { const schedule = await profileApi('/api/schedule'); const restored=readDraft(draftKey); setSaved(schedule); setDraft(restored || schedule); setDirty(!!restored && JSON.stringify(restored)!==JSON.stringify(schedule)); setError(''); }
     catch (failure) { setError(failure.message); }
   }
   useEffect(() => { load(); }, [hasProfile]);
@@ -31,14 +33,16 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
     }, 30000);
     return () => clearInterval(timer);
   }, [dirty, busy]);
-  function change(key, value) { setDraft(previous => ({ ...previous, [key]: value })); setDirty(true); setNotice(''); }
-  async function save(event) {
+  useUnsavedWarning(dirty);
+  function change(key, value) { setDraft(previous => { const next={...previous,[key]:value};writeDraft(draftKey,next);return next; }); setDirty(true); setNotice(''); }
+  async function save(event, search = false) {
     event.preventDefault(); setError(''); setNotice('');
     try { validateSchedule(draft); } catch (failure) { setError(failure.message); return; }
     setBusy(true);
     try {
       const schedule = await profileApi('/api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) });
-      setSaved(schedule); setDraft(schedule); setDirty(false);
+      setSaved(schedule); setDraft(schedule); setDirty(false); clearDraft(draftKey);
+      if (search) await onSearch?.(schedule);
       setNotice(schedule.enabled ? 'Automatické hledání je zapnuté. Plán byl uložen.' : 'Plán byl uložen. Automatika je vypnutá; ruční hledání zůstává dostupné.');
     } catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
@@ -59,7 +63,7 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
     <section aria-labelledby="schedule-title" className="mt-3 rounded-xl border border-viatix-line/60 bg-white/25 p-4">
     <div className="flex items-center gap-3"><CalendarClock className="h-5 w-5 text-viatix-teal" aria-hidden="true" /><h3 id="schedule-title" className="font-display text-lg font-semibold">Automatické hledání</h3></div>
     <p className="mt-2 text-sm text-muted-foreground">Nastav, kdy pro tebe hledat. Tvůj počítač může být vypnutý.</p>
-    {!draft ? <div className="mt-4"><p role="status" className="text-sm">{error ? 'Nastavení se nepodařilo načíst.' : 'Načítám plán…'}</p>{error && <button className="button-secondary mt-3" onClick={load}>Načíst znovu</button>}</div> : <form onSubmit={save}>
+    {!draft ? <div className="mt-4"><p role="status" className="text-sm">{error ? 'Nastavení se nepodařilo načíst.' : 'Načítám plán…'}</p>{error && <button className="button-secondary mt-3" onClick={load}>Načíst znovu</button>}</div> : <form onSubmit={event => save(event)}>
       <fieldset disabled={busy} className="mt-5 space-y-5">
         <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={draft.enabled} disabled={!hasProfile} onChange={event => change('enabled', event.target.checked)} className="h-5 w-5 accent-viatix-teal" />Zapnout automatické hledání</label>
         {!hasProfile && <p className="text-xs text-muted-foreground">Nejdřív vytvoř nebo nahraj profil.</p>}
@@ -84,7 +88,7 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false }) {
         {draft.period !== 'all' && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={draft.includeUnknownDates} onChange={event => change('includeUnknownDates', event.target.checked)} className="mt-0.5 accent-viatix-teal" />Zahrnout i inzeráty bez ověřitelného data zveřejnění</label>}
           </div>
         </details>
-        <div className="flex flex-wrap gap-3"><button className="button-primary" disabled={!dirty}>{busy ? 'Ukládám…' : 'Uložit nastavení'}</button>{dirty && <button type="button" className="button-secondary" onClick={() => { setDraft(saved); setDirty(false); setError(''); }}>Zahodit úpravy</button>}</div>
+        <div className="flex flex-wrap gap-3"><button type="submit" className="button-primary" disabled={!dirty}>{busy ? 'Ukládám…' : 'Uložit nastavení'}</button>{onSearch && <button type="button" className="button-secondary" disabled={busy || searchDisabled} onClick={event => save(event,true)}>{dirty ? 'Uložit a hledat' : 'Hledat podle nastavení'}</button>}{dirty && <button type="button" className="button-secondary" onClick={() => { setDraft(saved); clearDraft(draftKey); setDirty(false); setError(''); }}>Zahodit úpravy</button>}</div>
       </fieldset>
       {dirty && <p className="mt-3 text-xs text-amber-800">Máš neuložené změny. Ruční hledání používá poslední uložené nastavení.</p>}
 

@@ -1,3 +1,4 @@
+import {translateOffer} from './offerTranslation.js';
 import { opportunityRequest, opportunityHistory } from './opportunityApi.js';
 import { createClient } from '@libsql/client/http';
 import { CloudStore, UserError } from './cloudStore.js';
@@ -29,7 +30,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
     if (!localRequest(request)) return send(403, { error: 'Přístup je povolen pouze z localhostu.' });
     try {
       const store = await storage();
-      if (route === '/api/applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher) }));
+      if (route === '/api/applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher), translate: payload => translateOffer(store,payload,env,fetcher) }));
       if (route === '/api/profile') {
         if (request.method === 'GET') return send(200, new URL(request.url, 'http://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
         if (request.method === 'POST') return send(200, await store.saveProfile(await readBody(request)));

@@ -176,3 +176,10 @@
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   .job-card:hover { transform: none; }
 }
+@layer components {
+  .nav-tab { @apply relative min-h-12 flex-1 whitespace-nowrap px-3 py-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-viatix-teal sm:flex-none sm:px-5; }
+  .nav-tab-active { @apply text-viatix-teal; }
+  .nav-tab-active::after { content: ''; @apply absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-viatix-teal; }
+  .filter-chip { @apply inline-flex min-h-10 items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-viatix-teal/5; }
+  .filter-chip-active { @apply border-viatix-teal/20 bg-viatix-teal/10 font-medium text-viatix-teal; }
+}

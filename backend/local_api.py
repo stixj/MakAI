@@ -135,7 +135,8 @@ def main() -> int:
             from app.profile import parse_candidate_profile
             from app.cloud_storage import ProfileTursoStore
             content, profile_id = payload["profile"]["content"], payload["profile"]["id"]
-            if hashlib.sha256(content.encode("utf-8")).hexdigest() != profile_id:
+            content_id = payload["profile"].get("contentId", profile_id)
+            if hashlib.sha256(content.encode("utf-8")).hexdigest() != content_id:
                 raise ValueError("Profil běhu neodpovídá uložené verzi.")
             settings = get_settings()
             if not settings.database_url or not settings.turso_auth_token:

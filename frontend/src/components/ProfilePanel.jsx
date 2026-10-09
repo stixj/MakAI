@@ -7,7 +7,7 @@ import { profileApi as api } from '../lib/profileApi.js';
 
 const money = amount => new Intl.NumberFormat('cs-CZ').format(amount);
 
-export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
+export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact = false, onManage, onFirstSearch }) {
   const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
   const [profile, setProfile] = useState(null);
   const [busy, setBusy] = useState(true);
@@ -28,6 +28,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
   const seenRun = useRef('');
   const running = ['queued', 'running', 'stopping'].includes(hunt.status);
   const [stopping, setStopping] = useState(false);
+  const [scheduleDirty, setScheduleDirty] = useState(false);
 
   useEffect(() => {
     alive.current = true;
@@ -64,7 +65,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
         const [current, available] = await Promise.all([api('/api/profile'), api('/api/profile?list=1')]);
         if (!active || revision !== profileRevision.current) return;
         setProfiles(Array.isArray(available) ? available : []);
-        if (profile?.id !== current?.id) { onProfileChanged?.(current?.id || null); setProfileUpdated(false); callback.current(); }
+        if (profile?.id !== current?.id || profile?.revision !== current?.revision) { onProfileChanged?.(current?.id || null); setProfileUpdated(false); callback.current(); }
         setProfile(current);
       } catch (failure) { if (active) setError(failure.message); }
     }
@@ -80,20 +81,20 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
       const result = await api('/api/profile', options);
       setProfile(result); setHunt({ status: 'idle' }); setProfileUpdated(true);
       onProfileChanged?.(result?.id || null);
-      setNotice(result.isDefault ? 'Používám tvůj profil z projektu.' : cloud ? 'Profil byl uložen. Automatika je pozastavená; zapni ji znovu po kontrole nastavení.' : 'Nový profil je aktivní. Hledání bude vycházet z jeho preferencí.');
+      setNotice(result.isDefault ? 'Používám tvůj profil z projektu.' : cloud ? 'Profil byl uložen. Tvoje nabídky a přihlášky zůstávají dostupné. Automatika je pozastavená; zapni ji po kontrole nastavení.' : 'Nový profil je aktivní. Hledání bude vycházet z jeho preferencí.');
       callback.current();
       return true;
     } catch (failure) { setError(failure.message); return false; }
     finally { setBusy(false); }
   }
 
-  async function startHunt() {
+  async function startHunt(savedOptions = null) {
     setBusy(true); setError(''); setNotice('');
     try {
-      const options = cloud ? await api('/api/schedule') : { limit: Number(limit), period, includeUnknownDates };
+      const options = cloud ? savedOptions || await api('/api/schedule') : { limit: Number(limit), period, includeUnknownDates };
       const state = await api('/api/hunt', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...options, profileId: profile.id }) });
-      setHunt(state); setNotice(state.notice || '');
+      setHunt(state); setNotice(state.notice || ''); onFirstSearch?.();
     } catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   }
@@ -112,6 +113,15 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
     anchor.click(); URL.revokeObjectURL(url);
   }
 
+  if (compact && profile) return <section aria-label="Aktivní profil a hledání" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-viatix-teal/5 px-4 py-3">
+    <button type="button" onClick={onManage} className="min-h-11 min-w-0 flex-1 text-left"><span className="block text-xs text-muted-foreground">Hledáme podle profilu</span><span className="block truncate text-sm font-semibold text-viatix-teal">{profile.name}</span></button>
+    <div className="flex flex-wrap items-center gap-2"><button type="button" className="button-primary px-3 sm:px-5" aria-label="Hledat nové nabídky" disabled={busy || running || building || scheduleDirty} onClick={() => startHunt()}><Search className="h-4 w-4" /><span className="sm:hidden">{running ? 'Hledám…' : 'Hledat'}</span><span className="hidden sm:inline">{running ? hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…' : 'Hledat nové nabídky'}</span></button>{running && <button type="button" className="button-secondary" disabled={stopping || hunt.status === 'stopping'} onClick={stopHunt}>Zastavit</button>}</div>
+    {running && <p role="status" className="w-full text-xs text-muted-foreground">{cloud ? 'Stránku můžeš zavřít. Výsledky se uloží do přehledu.' : 'Hledání běží na tomto počítači.'}</p>}
+    {scheduleDirty && <p className="w-full text-xs text-amber-800">Nejdřív ulož změny v sekci Profil a hledání.</p>}
+    {(error || hunt.error) && <p role="alert" className="w-full text-sm text-red-700">{error || hunt.error}</p>}
+    {hunt.status === 'blocked' && <p role="alert" className="w-full text-sm text-amber-800">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení se zastavilo. Podrobnosti najdeš v Profil a hledání.'}</p>}
+    {['done','partial'].includes(hunt.status) && hunt.result && <p role="status" className="w-full text-xs text-muted-foreground">{hunt.status === 'partial' ? 'Hledání částečně dokončeno' : 'Hledání dokončeno'} · uloženo {hunt.result.saved} nabídek</p>}
+  </section>;
   return <section aria-labelledby="profile-title" className="mt-6 rounded-2xl border border-viatix-teal/25 bg-viatix-sand2 p-4 sm:p-5">
     <div className="flex flex-wrap items-center justify-between gap-4">
       <div className="flex min-w-0 items-center gap-3"><UserRound className="h-5 w-5 shrink-0 text-viatix-teal" aria-hidden="true" /><div>
@@ -119,7 +129,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
         <h2 id="profile-title" className="mt-1 break-words font-display text-lg font-semibold">{profile?.name || (busy ? 'Načítám tvůj profil…' : profileLoaded && !error ? 'Začni svým pracovním profilem' : 'Profil se nepodařilo načíst')}</h2>
       </div></div>
       {profile && <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className="button-primary" disabled={busy || running || building} onClick={startHunt}>
+        <button type="button" className="button-primary" disabled={busy || running || building || scheduleDirty} onClick={() => startHunt()}>
           {running ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />}
           {running ? (hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…') : 'Hledat nové nabídky'}
         </button>
@@ -134,13 +144,13 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
         <li><strong className="text-viatix-teal">2. Zkontroluj preference</strong><p className="mt-1 text-muted-foreground">Role, lokalitu a mzdové podmínky.</p></li>
         <li><strong className="text-viatix-teal">3. Najdi první nabídky</strong><p className="mt-1 text-muted-foreground">Potom si můžeš zapnout automatiku.</p></li>
       </ol>
-      <ProfileWizard disabled={busy || running} onBusyChange={setBuilding} triggerLabel="Vytvořit můj profil" primary onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
+      <ProfileWizard draftKey={'profile-wizard:' + (profile?.id || 'new')} disabled={busy || running} onBusyChange={setBuilding} triggerLabel="Vytvořit můj profil" primary onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
     </div>}
 
     {profile && <>
       {cloud && profiles.length > 1 && <label className="mt-4 block text-sm">Aktivní profil
         <select value={profile.id} disabled={busy || running || building} onChange={event => changeProfile({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) })} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3">
-          {profiles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {profiles.map(item => <option key={item.id} value={item.id}>{item.name}{item.revision ? ' · verze ' + (item.revision + 1) : ''}</option>)}
         </select>
         <span className="mt-1 block text-xs text-muted-foreground">Stejný výběr a historie na localhostu i online. Přepnutí profilu pozastaví automatiku.</span>
       </label>}
@@ -151,15 +161,15 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
           <div><h3 className="font-semibold">Lokalita a jazyky</h3><p className="mt-2 leading-relaxed text-muted-foreground">{profile.profile.location_preferences.join(' · ') || 'Lokalita neuvedena'}</p><p className="mt-2 text-muted-foreground">{profile.profile.language_preferences.join(' · ') || 'Jazyky neuvedeny'}</p></div>
           <div><h3 className="font-semibold">Mzdové preference</h3><p className="mt-2 text-muted-foreground">Cíl {profile.profile.salary.monthly_gross_target_czk.map(money).join('–')} Kč</p><p className="mt-2 text-muted-foreground">Běžné minimum {money(profile.profile.salary.standard_minimum_czk)} Kč</p><p className="mt-1 text-xs text-muted-foreground">Hrubá měsíční mzda</p></div>
         </div>
-        <ProfileEditor key={'editor-' + profile.id} profile={profile} disabled={busy || running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
+        <ProfileEditor key={'editor-' + profile.id + ':' + (profile.revision || 0)} profile={profile} disabled={busy || running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, replaceProfileId: cloud ? profile.id : undefined, expectedRevision: payload.expectedRevision ?? profile.revision ?? 0 }) })} />
         <details className="mt-4"><summary className="cursor-pointer py-1 text-sm text-viatix-teal">Další možnosti profilu</summary>
-          <ProfileWizard disabled={busy || running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
+          <ProfileWizard draftKey={'profile-wizard:' + (profile?.id || 'new')} disabled={busy || running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
           {!cloud && !profile.isDefault && <button type="button" className="button-secondary mt-3" disabled={busy || running || building} onClick={() => changeProfile({ method: 'DELETE' })}>Použít můj výchozí profil</button>}
           <button type="button" onClick={download} className="button-secondary mt-3">Stáhnout aktuální profil</button>
           <details className="mt-3"><summary className="cursor-pointer py-1 text-sm text-viatix-teal">Zobrazit podklady profilu</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white/40 p-4 font-sans text-xs leading-relaxed">{profile.content}</pre></details>
         </details>
       </details>
-      {cloud && <SchedulePanel key={'schedule-' + profile.id} hasProfile profileUpdated={profileUpdated} />}
+      {cloud && <SchedulePanel key={'schedule-' + profile.id + ':' + (profile.revision || 0)} hasProfile draftKey={'schedule:' + profile.id} profileUpdated={profileUpdated} onDirtyChange={setScheduleDirty} onSearch={options => startHunt(options)} searchDisabled={busy || running || building} />}
       {!cloud && <details className="mt-3">
         <summary className="cursor-pointer py-1 text-sm font-medium text-viatix-teal">Nastavení hledání</summary>
         <fieldset disabled={busy || running || building} className="mt-3 space-y-3 rounded-xl border border-viatix-line/60 p-4">
@@ -169,7 +179,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
           <label className="block text-sm">Nabídek na portál<select aria-label="Počet nabídek na portál" value={limit} onChange={event => setLimit(event.target.value)} className="ml-3 rounded-xl border border-viatix-line bg-transparent px-3 py-2">{[5, 10, 15, 30].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         </fieldset>
       </details>}
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Profil, historie a plán jsou uložené v Turso. Hledání probíhá online i při spuštění z localhostu.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
+      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Tvůj profil a výsledky jsou dostupné na všech připojených zařízeních. Automatické hledání může běžet i při zavřené aplikaci.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
     </>}
 
     {notice && <p role="status" className="mt-3 text-sm text-viatix-teal">{notice}</p>}
