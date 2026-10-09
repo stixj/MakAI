@@ -36,9 +36,13 @@ export function getOfferSources(offer) {
 export function parseJobRow(row) {
   const offer = JSON.parse(row.offer);
   const evaluation = JSON.parse(row.evaluation);
+  if (row.manual === true && evaluation === null) {
+    if (!offer || row.offer_id !== offer.id || !text(offer.title) || !text(offer.company) || typeof offer.raw_description !== 'string' || offer.url !== null && !safeOfferUrl(offer.url)) throw new Error('Neplatný záznam nabídky.');
+    return { id: row.offer_id, offer, evaluation: null, manual: true, createdAt: row.created_at, evaluatedAt: null, offerEdited: row.offerEdited === true, evaluationStale: row.evaluationStale === true, offerRevision: row.offerRevision || 0, state: normalizeJobState(row.state) };
+  }
   if (!offer || !evaluation || !text(row.offer_id) || row.offer_id !== offer.id ||
-      !text(offer.title) || !text(offer.company) || !text(offer.raw_description) ||
-      !safeOfferUrl(offer.url) || (offer.published_at != null &&
+      !text(offer.title) || !text(offer.company) || (!text(offer.raw_description) && !(row.offerEdited === true && typeof offer.raw_description === 'string')) ||
+      !((row.manual === true || row.offerEdited === true) && offer.url === null || safeOfferUrl(offer.url)) || (offer.published_at != null &&
         (!text(offer.published_at) || !Number.isFinite(Date.parse(offer.published_at)))) ||
       !Number.isInteger(evaluation.score) || evaluation.score < 0 || evaluation.score > 100 ||
       !textList(evaluation.fit_reasons) || evaluation.fit_reasons.length < 2 || evaluation.fit_reasons.length > 3 ||
@@ -47,7 +51,7 @@ export function parseJobRow(row) {
   }
   const expected = evaluation.score >= 80 ? 'STRONG_FIT' : evaluation.score >= 50 ? 'POTENTIAL_FIT' : 'NO_GO';
   if (evaluation.verdict !== expected) throw new Error('Verdikt neodpovídá skóre.');
-  return { id: row.offer_id, offer, evaluation, evaluatedAt: row.evaluated_at, state: normalizeJobState(row.state) };
+  return { id: row.offer_id, offer, evaluation, evaluatedAt: row.evaluated_at, manual: row.manual === true, createdAt: row.created_at, offerEdited: row.offerEdited === true, evaluationStale: row.evaluationStale === true, offerRevision: row.offerRevision || 0, state: normalizeJobState(row.state) };
 }
 export function decodeJobRows(rows) {
   const jobs = [];
@@ -64,11 +68,11 @@ export function filterJobs(jobs, { search = '', verdict = 'all', sort = 'score',
   const since = hours ? now - hours * 3600000 : null;
   return jobs.filter(job =>
     (since == null || (parseTimestamp(job.evaluatedAt) >= since && parseTimestamp(job.evaluatedAt) <= now)) &&
-    (verdict === 'all' || job.evaluation.verdict === verdict) &&
+    (verdict === 'all' || job.evaluation?.verdict === verdict) &&
     normalize(job.offer.title + ' ' + job.offer.company).includes(needle)
   ).sort((a, b) => sort === 'newest'
     ? (parseTimestamp(b.evaluatedAt) || 0) - (parseTimestamp(a.evaluatedAt) || 0)
-    : b.evaluation.score - a.evaluation.score || a.offer.title.localeCompare(b.offer.title, 'cs'));
+    : (b.evaluation?.score ?? -1) - (a.evaluation?.score ?? -1) || a.offer.title.localeCompare(b.offer.title, 'cs'));
 }
 function parseTimestamp(value) {
   if (!value) return NaN;

@@ -1,3 +1,5 @@
+import { canonicalId } from './externalOffer.js';
+import { blankApplication, appendEvent, validateApplication } from './applicationStore.js';
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseCloudProfile, profileTable } from './cloudProfile.js';
@@ -10,7 +12,12 @@ async function optional(path) {
 export async function localSnapshots(root) {
   const snapshots = [];
   const original = await optional(join(root, 'candidate_profile.md'));
-  if (original) snapshots.push({ name: 'Tvůj profil z projektu', content: original, rows: [], legacy: true, selected: true });
+  if (original) {
+    const historyRaw = await optional(join(root, 'data', 'application_history.json'));
+    const applications = historyRaw ? JSON.parse(historyRaw) : [];
+    if (!Array.isArray(applications)) throw new Error('Neplatná historie přihlášek.');
+    snapshots.push({ name: 'Tvůj profil z projektu', content: original, rows: [], legacy: true, selected: true, applications });
+  }
   const directory = join(root, 'data', 'profiles');
   const activeRaw = await optional(join(directory, 'active.json'));
   const active = activeRaw ? JSON.parse(activeRaw).id : 'default';
@@ -63,6 +70,25 @@ export async function importSnapshot(store, snapshot) {
     for (let offset = 0; offset < statements.length; offset += 100) {
       const results = await tx.batch(statements.slice(offset, offset + 100));
       inserted += results.reduce((sum, result) => sum + result.rowsAffected, 0);
+    }
+    for (const source of snapshot.applications || []) {
+      if (source.reported_status !== 'applied') continue;
+      if (typeof source.employer !== 'string' || typeof source.position !== 'string') throw new Error('Neplatná historie přihlášek.');
+      const canonical = canonicalId(source.employer, source.position, '');
+      const sourceId = 'local-history-' + canonical;
+      if ((await tx.execute({sql:'SELECT source_id FROM makai_application_imports WHERE profile_id=? AND source_id=?',args:[profile.id,sourceId]})).rows.length) continue;
+      const candidates = [...(await tx.execute('SELECT offer_id,offer FROM '+table)).rows, ...(await tx.execute({sql:'SELECT offer_id,offer FROM makai_manual_offers WHERE profile_id=?',args:[profile.id]})).rows];
+      const existing = candidates.find(row=>{const offer=JSON.parse(row.offer);return canonicalId(offer.company,offer.title,offer.location||'')===canonical;});
+      const offerId = existing?.offer_id || sourceId;
+      if (!existing) {
+        const offer = {id:offerId,title:source.position,company:source.employer,location:null,url:null,raw_description:'',salary_raw:null,published_at:null,canonical_id:canonical,sources:[]};
+        await tx.execute({sql:'INSERT INTO makai_manual_offers(profile_id,offer_id,offer,created_at) VALUES(?,?,?,?)',args:[profile.id,offerId,JSON.stringify(offer),store.now().toISOString()]});
+      }
+      const application=validateApplication({...blankApplication(),appliedAt:source.applied_at||null,notes:source.notes||''});
+      await tx.execute({sql:'INSERT OR IGNORE INTO makai_applications(profile_id,offer_id,payload) VALUES(?,?,?)',args:[profile.id,offerId,JSON.stringify(application)]});
+      await tx.execute({sql:'INSERT OR IGNORE INTO makai_job_states(profile_id,offer_id,saved,applied,hidden,updated_at) VALUES(?,?,0,1,0,?)',args:[profile.id,offerId,store.now().toISOString()]});
+      await appendEvent(store,tx,profile.id,offerId,'imported',{source:'Místní historie přihlášek',appliedAt:application.appliedAt});
+      await tx.execute({sql:'INSERT INTO makai_application_imports(profile_id,source_id) VALUES(?,?)',args:[profile.id,sourceId]});
     }
     // Existing online selection and automation are never overwritten by migration.
     if (snapshot.selected) await tx.execute({ sql: 'UPDATE makai_control SET profile_id=? WHERE id=1 AND profile_id IS NULL', args: [profile.id] });

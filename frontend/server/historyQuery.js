@@ -1,3 +1,4 @@
+import {applyOfferEdit} from './offerEditing.js';
 import { inCollection, normalizeJobState } from '../src/lib/jobState.js';
 import { filterJobs, VERDICTS } from '../src/lib/jobs.js';
 
@@ -24,15 +25,15 @@ export function historyQuery(url) {
 
 export function historyView(metadata, query) {
   const jobs = metadata.filter(row => typeof row.title === 'string' && typeof row.company === 'string' &&
-    VERDICTS[row.verdict] && Number.isFinite(Number(row.score))).map(row => ({
+    (row.manual === true && row.verdict == null || VERDICTS[row.verdict] && Number.isFinite(Number(row.score)))).map(row => ({
     id: row.offer_id, state: normalizeJobState(row.state), offer: { title: row.title, company: row.company },
-    evaluation: { verdict: row.verdict, score: Number(row.score) }, evaluatedAt: row.evaluated_at,
+    evaluation: row.verdict ? { verdict: row.verdict, score: Number(row.score) } : null, evaluatedAt: row.evaluated_at,
   }));
   const collectionJobs = jobs.filter(job => inCollection(job.state, query.collection));
   const base = filterJobs(collectionJobs, { ...query, verdict: 'all' }).filter(job =>
-    !query.since || Date.parse(job.evaluatedAt.includes('T') ? job.evaluatedAt : job.evaluatedAt.replace(' ', 'T') + 'Z') > Date.parse(query.since));
-  const counts = Object.fromEntries(Object.keys(VERDICTS).map(key => [key, base.filter(job => job.evaluation.verdict === key).length]));
-  const filtered = query.verdict === 'all' ? base : base.filter(job => job.evaluation.verdict === query.verdict);
+    !query.since || job.evaluatedAt && Date.parse(job.evaluatedAt.includes('T') ? job.evaluatedAt : job.evaluatedAt.replace(' ', 'T') + 'Z') > Date.parse(query.since));
+  const counts = Object.fromEntries(Object.keys(VERDICTS).map(key => [key, base.filter(job => job.evaluation?.verdict === key).length]));
+  const filtered = query.verdict === 'all' ? base : base.filter(job => job.evaluation?.verdict === query.verdict);
   const total = filtered.length;
   const pageCount = Math.max(1, Math.ceil(total / query.pageSize));
   const page = Math.min(query.page, pageCount);
@@ -40,12 +41,13 @@ export function historyView(metadata, query) {
   return { ids, total, totalAll: collectionJobs.length, totalStored: jobs.length, counts, pageCount, page, pageSize: query.pageSize };
 }
 
-export async function readHistoryPage(client, query, states) {
+export async function readHistoryPage(client, query, states, extraRows = [], edits = []) {
   const stateById = new Map((states || []).map(row => [row.offer_id, normalizeJobState(row)]));
   const metadata = await client.execute({ sql: "SELECT offer_id, json_extract(offer, '$.title') AS title, json_extract(offer, '$.company') AS company, json_extract(evaluation, '$.score') AS score, json_extract(evaluation, '$.verdict') AS verdict, evaluated_at FROM makai_job_evaluations ORDER BY offer_id", args: [] });
-  const { ids, ...view } = historyView(metadata.rows.map(row => ({ ...row, state: stateById.get(row.offer_id) })), query);
+  const extraMetadata = extraRows.map(row => { const offer = JSON.parse(row.offer), evaluation = JSON.parse(row.evaluation); return { offer_id: row.offer_id, title: offer.title, company: offer.company, score: evaluation?.score, verdict: evaluation?.verdict, manual: true, evaluated_at: row.evaluated_at || row.created_at }; });
+  const { ids, ...view } = historyView([...metadata.rows, ...extraMetadata].map(row => {const edit=edits.find(item=>item.offer_id===row.offer_id);const offer=edit?JSON.parse(edit.payload):{};return ({ ...row, ...Object.fromEntries(['title','company'].filter(key=>key in offer).map(key=>[key,offer[key]])), state: stateById.get(row.offer_id) });}), query);
   if (!ids.length) return { rows: [], ...view };
   const result = await client.execute({ sql: 'SELECT offer_id, offer, evaluation, evaluated_at FROM makai_job_evaluations WHERE offer_id IN (' + ids.map(() => '?').join(',') + ')', args: ids });
-  const byId = new Map(result.rows.map(row => [row.offer_id, row]));
-  return { rows: ids.map(id => { const row = byId.get(id); return row && { ...row, ...(states ? { state: stateById.get(id) || normalizeJobState() } : {}) }; }).filter(Boolean), ...view };
+  const byId = new Map([...result.rows, ...extraRows].map(row => [row.offer_id, row]));
+  return { rows: ids.map(id => { const original = byId.get(id); const row = original && applyOfferEdit(original,edits); return row && { ...row, ...(states ? { state: stateById.get(id) || normalizeJobState() } : {}) }; }).filter(Boolean), ...view };
 }
