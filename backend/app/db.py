@@ -16,7 +16,8 @@ if TYPE_CHECKING:
     from .turso import TursoEvaluationStore
 
 TABLE = "makai_job_evaluations"
-INDEX = "makai_job_canonical_idx"
+# A new index name marks completion of the seniority-preserving backfill.
+INDEX = "makai_job_canonical_v2_idx"
 CREATE_TABLE = """
     CREATE TABLE IF NOT EXISTS makai_job_evaluations (
         offer_id TEXT PRIMARY KEY,
@@ -26,7 +27,7 @@ CREATE_TABLE = """
     )
 """
 CREATE_INDEX = """
-    CREATE UNIQUE INDEX IF NOT EXISTS makai_job_canonical_idx
+    CREATE UNIQUE INDEX IF NOT EXISTS makai_job_canonical_v2_idx
     ON makai_job_evaluations (json_extract(offer, '$.canonical_id'))
 """
 UPSERT = """
@@ -81,6 +82,9 @@ def _schema_statements(store: "TursoEvaluationStore") -> list[tuple[str, list[di
         if _execute(store, "SELECT name FROM sqlite_master WHERE type='index' AND name=?", INDEX):
             store._canonical_ready = True
             return []
+        # Drop the old constraint in the same transaction as the backfill;
+        # rollback restores both the old identities and their unique index.
+        statements.append(("DROP INDEX IF EXISTS makai_job_canonical_idx", []))
         rows = _execute(store, "SELECT offer_id, offer FROM makai_job_evaluations ORDER BY evaluated_at, offer_id")
         groups: dict[str, tuple[str, JobOffer]] = {}
         for row in rows:

@@ -1,4 +1,4 @@
-"""Serial ingest -> filter -> deduplicate -> evaluate -> save."""
+"""Serial ingestion followed by one-offer evaluation/persistence steps."""
 
 from collections.abc import Callable
 
@@ -8,15 +8,15 @@ from pydantic import ValidationError
 
 from .config import Settings, get_settings
 from .evaluator import EvaluationError, evaluate_job, validate_evaluation
-from .schemas import JobFitEvaluation, JobOffer, MakAIState
-from .storage import EvaluationStore, create_store
+from .schemas import JobFitEvaluation, JobOffer, MakAIState, MakAIStateUpdate
+from .storage import EvaluationStore, JsonEvaluationStore, create_store
 from .turso import TursoEvaluationStore
 from .utils.sources import enrich_offer
 
 JobEvaluator = Callable[[JobOffer], JobFitEvaluation]
 
 
-def ingest(state: MakAIState) -> MakAIState:
+def ingest(state: MakAIState) -> MakAIStateUpdate:
     offers: list[JobOffer] = []
     errors = list(state.get("errors", []))
     for index, value in enumerate(state.get("offers", [])):
@@ -26,10 +26,11 @@ def ingest(state: MakAIState) -> MakAIState:
             errors.append(f"Ingest: neplatný inzerát na pozici {index}.")
     # Every invocation is a fresh batch; stale evaluations must not survive.
     return {"offers": offers, "evaluations": {}, "errors": errors,
-            "skipped_duplicates": [], "saved_ids": [], "enriched_ids": [], "evaluation_blocked": None}
+            "skipped_duplicates": [], "saved_ids": [], "enriched_ids": [], "evaluation_blocked": None,
+            "evaluation_index": 0, "evaluation_limit_reached": False}
 
 
-def filter_offers(state: MakAIState) -> MakAIState:
+def filter_offers(state: MakAIState) -> MakAIStateUpdate:
     seen: set[str] = set()
     offers: list[JobOffer] = []
     errors = list(state["errors"])
@@ -40,7 +41,7 @@ def filter_offers(state: MakAIState) -> MakAIState:
         seen.add(offer.id)
         offers.append(offer)
     # Semantic no-go decisions belong to the evaluator, not keyword guesses.
-    return {**state, "offers": offers, "errors": errors}
+    return {"offers": offers, "errors": errors}
 
 
 def build_graph(
@@ -56,7 +57,7 @@ def build_graph(
     if max_evaluations is not None and (type(max_evaluations) is not int or not 1 <= max_evaluations <= 100):
         raise ValueError("Limit AI hodnocení musí být 1–100.")
 
-    def deduplicate(state: MakAIState) -> MakAIState:
+    def deduplicate(state: MakAIState) -> MakAIStateUpdate:
         offers: list[JobOffer] = []
         identities: dict[str, int] = {}
         urls: dict[str, int] = {}
@@ -88,52 +89,57 @@ def build_graph(
             identities[offer.canonical_id] = len(offers)
             urls[url] = len(offers)
             offers.append(offer)
-        return {**state, "offers": offers, "skipped_duplicates": skipped,
+        return {"offers": offers, "skipped_duplicates": skipped,
                 "enriched_ids": enriched, "errors": errors}
 
-    def evaluate(state: MakAIState) -> MakAIState:
+    def evaluate(state: MakAIState) -> MakAIStateUpdate:
+        index = state["evaluation_index"]
+        offer = state["offers"][index]
         evaluations = dict(state["evaluations"])
         errors = list(state["errors"])
         blocked = None
-        for index, offer in enumerate(state["offers"]):
-            if max_evaluations is not None and index >= max_evaluations:
-                break
-            try:
-                evaluations[offer.id] = validate_evaluation(evaluator(offer))
-            except EvaluationError as exc:
-                if exc.stop_batch:
-                    blocked = {"kind": exc.kind, "message": str(exc),
-                               "notEvaluated": len(state["offers"]) - len(evaluations)}
-                    errors.append(str(exc))
-                    break
+        try:
+            evaluations[offer.id] = validate_evaluation(evaluator(offer))
+        except EvaluationError as exc:
+            if exc.stop_batch:
+                blocked = {"kind": exc.kind, "message": str(exc),
+                           "notEvaluated": len(state["offers"]) - len(evaluations)}
+                errors.append(str(exc))
+            else:
                 errors.append(f"Evaluate {offer.id!r}: {exc}")
-            except Exception as exc:
-                errors.append(f"Evaluate {offer.id!r}: {type(exc).__name__}.")
-        return {**state, "evaluations": evaluations, "errors": errors, "evaluation_blocked": blocked,
+        except Exception as exc:
+            errors.append(f"Evaluate {offer.id!r}: {type(exc).__name__}.")
+        return {"evaluations": evaluations, "errors": errors, "evaluation_blocked": blocked,
+                "evaluation_index": index + 1,
                 "evaluation_limit_reached": max_evaluations is not None and len(state["offers"]) > max_evaluations}
 
-    def save(state: MakAIState) -> MakAIState:
-        if not state["evaluations"]:
-            return state
+    def save(state: MakAIState) -> MakAIStateUpdate:
+        offer = state["offers"][state["evaluation_index"] - 1]
+        evaluation = state["evaluations"].get(offer.id)
+        if evaluation is None:
+            return {}
         errors = list(state["errors"])
-        saved_ids: list[str] = []
-        if isinstance(active_store, TursoEvaluationStore):
-            for offer in state["offers"]:
-                evaluation = state["evaluations"].get(offer.id)
-                if evaluation is None:
-                    continue
-                try:
-                    active_store.save_evaluated_job(offer, evaluation)
-                    saved_ids.append(offer.id)
-                except Exception as exc:
-                    errors.append(f"Save {offer.id!r}: {type(exc).__name__}; výsledky zůstaly ve stavu.")
-            return {**state, "errors": errors, "saved_ids": saved_ids}
+        saved_ids = list(state["saved_ids"])
         try:
-            active_store.save(state["offers"], state["evaluations"])
-            saved_ids = list(state["evaluations"])
+            if isinstance(active_store, JsonEvaluationStore):
+                # Atomic replacement alone would discard preceding microbatches.
+                active_store.save([offer], {offer.id: evaluation}, merge_existing=True)
+            elif isinstance(active_store, TursoEvaluationStore):
+                active_store.save_evaluated_job(offer, evaluation)
+            else:
+                active_store.save([offer], {offer.id: evaluation})
+            saved_ids.append(offer.id)
         except Exception as exc:
             errors.append(f"Save: {type(exc).__name__}; výsledky zůstaly ve stavu.")
-        return {**state, "errors": errors, "saved_ids": saved_ids}
+        return {"errors": errors, "saved_ids": saved_ids}
+
+    def next_offer(state: MakAIState) -> str:
+        index = state["evaluation_index"]
+        if (state.get("evaluation_blocked") is not None
+                or index >= len(state["offers"])
+                or (max_evaluations is not None and index >= max_evaluations)):
+            return END
+        return "evaluate"
 
     builder = StateGraph(MakAIState)
     builder.add_node("ingest", ingest)
@@ -144,7 +150,9 @@ def build_graph(
     builder.add_edge(START, "ingest")
     builder.add_edge("ingest", "filter")
     builder.add_edge("filter", "deduplicate")
-    builder.add_edge("deduplicate", "evaluate")
+    builder.add_conditional_edges("deduplicate", next_offer, ["evaluate", END])
     builder.add_edge("evaluate", "save")
-    builder.add_edge("save", END)
-    return builder.compile()
+    builder.add_conditional_edges("save", next_offer, ["evaluate", END])
+    # Each offer now consumes two supersteps; the default 25 is too small
+    # even for a normal portal batch. Callers may override this safety limit.
+    return builder.compile().with_config({"recursion_limit": 10_000})

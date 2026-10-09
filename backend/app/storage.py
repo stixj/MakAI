@@ -33,6 +33,7 @@ class JsonEvaluationStore:
     def save(
         self, offers: Sequence[JobOffer],
         evaluations: Mapping[str, JobFitEvaluation],
+        *, merge_existing: bool | None = None,
     ) -> None:
         payload = {
             "saved_at": datetime.now(timezone.utc).isoformat(),
@@ -42,7 +43,8 @@ class JsonEvaluationStore:
                 for offer in offers if offer.id in evaluations
             ],
         }
-        if self.merge_existing:
+        should_merge = self.merge_existing if merge_existing is None else merge_existing
+        if should_merge:
             timestamp = payload["saved_at"]
             old = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {"results": [], "saved_at": timestamp}
             previous = {item["offer"]["id"]: {**item, "evaluated_at": item.get("evaluated_at", old["saved_at"])}

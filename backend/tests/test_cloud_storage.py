@@ -7,9 +7,25 @@ from backend.app.graph import build_graph
 from backend.app.demo import sample_offers, demo_evaluate_job
 from backend.app.evaluator import EvaluationError
 from backend.tests.test_graph import RecordingStore, initial_state
+from backend.tests.test_turso import SQLiteHrana
 
 
 class CloudStorageTests(unittest.TestCase):
+    def test_identity_version_indexes_remain_isolated_between_profiles(self):
+        engine = SQLiteHrana()
+        self.addCleanup(engine.db.close)
+        offer = sample_offers()[0]
+        evaluation = demo_evaluate_job(offer)
+        for profile_id in ("a" * 64, "b" * 64):
+            store = ProfileTursoStore("libsql://example.turso.io", "test-secret", profile_id)
+            with patch.object(TursoEvaluationStore, "_request", side_effect=engine):
+                store.save([offer], {offer.id: evaluation})
+                reopened = ProfileTursoStore("libsql://example.turso.io", "test-secret", profile_id)
+                self.assertEqual(reopened.find_existing_job(offer), offer)
+        indexes = engine.db.execute("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE '%canonical_v2_idx' ORDER BY name").fetchall()
+        self.assertEqual(indexes, [("makai_profile_" + p + "_canonical_v2_idx",)
+                                  for p in ("a" * 64, "b" * 64)])
+
     def test_profile_scope_rewrites_sql_and_schema_args_without_touching_values(self):
         store = ProfileTursoStore("libsql://example.turso.io", "test-secret", "a" * 64)
         command = {"type": "batch", "batch": {"steps": [

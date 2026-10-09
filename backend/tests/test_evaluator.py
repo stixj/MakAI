@@ -3,7 +3,9 @@
 import json
 import unittest
 from types import SimpleNamespace
+import httpx
 from google.genai.errors import ClientError, ServerError
+from openai import APIConnectionError, APITimeoutError
 from unittest.mock import patch
 
 from pydantic import ValidationError
@@ -15,6 +17,7 @@ from backend.app.evaluator import (
     build_prompt, evaluate_job, validate_evaluation, provider_failure,
 )
 from backend.app.profile import MASTER_PROFILE
+from backend.app.graph import build_graph
 from backend.app.schemas import JobFitEvaluation, JobOffer
 
 
@@ -148,6 +151,67 @@ if __name__ == "__main__":
 
 
 class ProviderAvailabilityTests(unittest.TestCase):
+    def test_transport_errors_are_retryable_batch_blockers_and_redacted(self):
+        request = httpx.Request("POST", "https://example.invalid")
+        errors = (
+            APITimeoutError(request=request),
+            APIConnectionError(message="private API key", request=request),
+            httpx.ReadTimeout("private API key", request=request),
+            httpx.ConnectError("private API key", request=request),
+            httpx.RemoteProtocolError("private API key", request=request),
+            TimeoutError("private API key"), ConnectionError("private API key"),
+        )
+        for error in errors:
+            with self.subTest(error=type(error).__name__):
+                failure = provider_failure(error, "Provider")
+                self.assertEqual(failure.kind, "transport")
+                self.assertTrue(failure.retryable)
+                self.assertTrue(failure.stop_batch)
+                self.assertNotIn("private", str(failure))
+
+    def test_transport_or_quota_stops_batch_without_retry_or_fallback(self):
+        errors = (
+            httpx.ReadTimeout("private key"),
+            ClientError(429, {"error": {"message": "private body"}}),
+        )
+        settings = Settings(gemini_api_key="test-only", openai_api_key="test-only",
+                            allow_openai_fallback=True)
+        offers = sample_offers()
+        for error in errors:
+            with self.subTest(error=type(error).__name__), \
+                 patch("backend.app.evaluator.get_settings", return_value=settings), \
+                 patch("backend.app.evaluator._evaluate_gemini", side_effect=error) as gemini, \
+                 patch("backend.app.evaluator._evaluate_openai") as fallback, \
+                 patch("backend.app.evaluator.time.sleep") as sleep:
+                store = SimpleNamespace(save=lambda *args: self.fail("No result should be saved"))
+                result = build_graph(store=store).invoke({"offers": offers, "evaluations": {}, "errors": []})
+                gemini.assert_called_once()
+                fallback.assert_not_called()
+                sleep.assert_not_called()
+                self.assertEqual(result["evaluation_blocked"]["notEvaluated"], len(offers))
+                self.assertEqual(result["saved_ids"], [])
+
+    def test_openai_timeout_stops_remaining_offers_after_saving_success(self):
+        offers = sample_offers()
+        expected = demo_evaluate_job(offers[0])
+        writes = []
+        request = httpx.Request("POST", "https://example.invalid")
+        third = JobOffer.model_validate(offers[0].model_dump() | {
+            "id": "third", "title": "Third position", "canonical_id": "",
+            "url": "https://example.com/third", "sources": [],
+        })
+        with patch("backend.app.evaluator.get_settings", return_value=Settings(llm_provider="openai", openai_api_key="test-only")), \
+             patch("backend.app.evaluator._evaluate_openai", side_effect=[expected, APITimeoutError(request=request)]) as provider, \
+             patch("backend.app.evaluator.time.sleep") as sleep:
+            store = SimpleNamespace(save=lambda offers, evaluations: writes.append(dict(evaluations)))
+            result = build_graph(store=store).invoke({"offers": [*offers, third], "evaluations": {}, "errors": []})
+        self.assertEqual(provider.call_count, 2)
+        sleep.assert_not_called()
+        self.assertEqual(writes, [{offers[0].id: expected}])
+        self.assertEqual(result["saved_ids"], [offers[0].id])
+        self.assertEqual(result["evaluation_blocked"]["kind"], "transport")
+        self.assertEqual(result["evaluation_blocked"]["notEvaluated"], 2)
+
     def test_daily_quota_is_actionable_and_never_retried(self):
         exc = ClientError(429, {"error": {"message": "secret body and profile", "status": "RESOURCE_EXHAUSTED",
                           "details": [{"violations": [{"quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}})

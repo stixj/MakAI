@@ -17,6 +17,16 @@ import {importSnapshot,migrateLocalData} from './sharedMigration.js';
 const content=await readFile(new URL('../public/templates/candidate-profile-template.json',import.meta.url),'utf8');
 const offer={title:'Procesní specialista',company:'Firma s.r.o.',location:'Brno',salary_raw:'',raw_description:'Práce s procesy',url:'https://example.com/job?utm_source=mail'};
 const evaluation={score:85,verdict:'STRONG_FIT',fit_reasons:['Důvod 1','Důvod 2'],gap_analysis:[],tailored_cv_highlights:[]};
+test('canonical identity retains seniority and technology while removing administrative parentheses',()=>{
+  const qualifiers=['Junior','Senior','Medior','Lead','Principal','Intern','Trainee','Head of','Python','React','DevOps'];
+  const ids=new Set(qualifiers.map(q=>canonicalId('Acme',`Engineer (${q})`,'Praha')));
+  assert.equal(ids.size,qualifiers.length);
+  assert.ok(!ids.has(canonicalId('Acme','Engineer','Praha')));
+  for(const noise of ['m/ž','m/f','dpp','hpp','ičo','plný úvazek','vhodné pro absolventy']){
+    assert.equal(canonicalId('Acme',`Engineer (${noise})`,'Praha'),canonicalId('Acme','Engineer','Praha'));
+    assert.equal(canonicalId('Acme',`Engineer (Senior Python ${noise})`,'Praha'),canonicalId('Acme','Engineer (Senior Python)','Praha'));
+  }
+});
 async function setup(t){const client=createClient({url:'file::memory:'});t.after(()=>client.close());const store=new CloudStore(client,{now:()=>new Date('2026-10-09T10:00:00Z')});await store.initialize();const profile=await store.saveProfile({name:'Mine',content});return {store,client,profileId:profile.id};}
 async function add(store,profileId,applied=true){return addOffer(store,{profileId,offer,applied,appliedAt:'2026-10-01'});}
 test('manual offers need no tokens and persist without invented scores, URL or description',async t=>{const {store,profileId}=await setup(t);const saved=await addOffer(store,{profileId,offer:{...offer,url:'',raw_description:''},applied:false});const page=await opportunityHistory(store,historyQuery('/api/jobs?view=paged&collection=saved'));assert.equal(page.total,1);const job=decodeJobRows(page.rows).jobs[0];assert.equal(job.evaluation,null);assert.equal(job.offer.url,null);assert.equal(job.offer.raw_description,'');assert.equal(job.state.saved,true);assert.equal(saved.duplicate,false);await assert.rejects(store.evaluateOffer({profileId,offerId:saved.offerId}),e=>e.status===400);});

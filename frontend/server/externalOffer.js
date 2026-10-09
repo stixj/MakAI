@@ -21,7 +21,7 @@ export function canonicalId(company,title,location='') {
   const gender=/(?<!\w)(?:m\s*[/\\]\s*z|f\s*[/\\]\s*m|m\s*[/\\]\s*f|m\s*[/\\]\s*w\s*[/\\]\s*d)(?!\w)/g;
   const employment=/\b(?:full[\s-]*time|part[\s-]*time|(?:plny|plneho|zkraceny|zkraceneho|castecny|castecneho|polovicni|polovicniho)\s+uvaz(?:ek|ku)|hpp|vpp|dpp|dpc)\b/g;
   const c=ascii(company).replace(/(?<!\w)(?:spol\.?\s*s\s*r\.?\s*o\.?|s\.?\s*r\.?\s*o\.?|a\.?\s*s\.?)(?!\w)/g,'').replace(/[^a-z0-9]/g,'');
-  const t=ascii(title).replace(/\(([^()]*)\)/g,(all,inside)=>{const cleaned=inside.trim().replace(gender,'').replace(employment,'');return !cleaned.replace(/[\s,;/+-]/g,'')||/^(?:junior|medior|senior|juniorni|seniorni|jr\.?|sr\.?)(?:\s*[/,-]\s*(?:junior|medior|senior))*$/.test(cleaned.trim())?' ':all;}).replace(gender,'').replace(employment,'').replace(/[^a-z0-9+#]+/g,' ').trim();
+  const t=ascii(title).replace(/\(([^()]*)\)/g,(_,inside)=>{const cleaned=inside.trim().replace(gender,'').replace(employment,'').replace(/\bico\b/g,'').replace(/\bvhodne\s+pro\s+absolventy\b/g,'');return !cleaned.replace(/[\s,;/+-]/g,'')?' ':'('+cleaned+')';}).replace(gender,'').replace(employment,'').replace(/[^a-z0-9+#]+/g,' ').trim();
   if(!c||!t)throw new UserError('Doplň firmu a název pozice.');
   const parts=[c,t,ascii(location).replace(/[^a-z0-9]+/g,' ').trim()]; return 'job-v1-'+createHash('sha256').update(JSON.stringify(parts)).digest('hex');
 }

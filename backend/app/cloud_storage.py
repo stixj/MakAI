@@ -22,12 +22,13 @@ class ProfileTursoStore(TursoEvaluationStore):
                 return [scoped(item) for item in value]
             if value == "makai_job_evaluations":
                 return self.table
-            if value in ("makai_job_canonical_idx", "makai_job_url_idx"):
+            if value in ("makai_job_canonical_idx", "makai_job_canonical_v2_idx", "makai_job_url_idx"):
                 return str(value).replace("makai_job", self.table)
             return value
 
         def rewrite(sql):
             return (sql.replace("makai_job_evaluations", self.table)
+                    .replace("makai_job_canonical_v2_idx", self.table + "_canonical_v2_idx")
                     .replace("makai_job_canonical_idx", self.table + "_canonical_idx")
                     .replace("makai_job_url_idx", self.table + "_url_idx"))
 

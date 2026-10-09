@@ -9,7 +9,8 @@ from contextvars import ContextVar
 
 from google import genai
 from google.genai import types
-from openai import OpenAI
+import httpx
+from openai import APIConnectionError, APITimeoutError, OpenAI
 
 from .config import PROJECT_ROOT, Settings, get_settings
 from .profile import CandidateProfile, MASTER_PROFILE, REFERENCES_PATH, load_application_history
@@ -31,6 +32,10 @@ class EvaluationError(RuntimeError):
 
 def provider_failure(exc, name):
     """Use only status codes and quota metadata; never expose SDK response messages."""
+    if isinstance(exc, (APITimeoutError, APIConnectionError, httpx.TransportError,
+                        TimeoutError, ConnectionError)):
+        return EvaluationError(f"{name}: spojení s API selhalo nebo překročilo časový limit.",
+                               kind="transport", stop_batch=True, retryable=True)
     code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
     details = getattr(exc, "details", None)
     payload = details.get("error", details) if isinstance(details, dict) else {}
@@ -184,6 +189,10 @@ def evaluate_job(offer: JobOffer) -> JobFitEvaluation:
             except Exception as exc:  # SDK response bodies must stay private.
                 failure = provider_failure(exc, name)
                 logger.warning("Evaluace selhala (%s; %s).", name, failure.kind)
+                # Retryable describes a future run, not permission to keep a
+                # timed-out or quota-blocked batch alive (including fallback).
+                if failure.stop_batch and failure.kind in {"transport", "daily_quota", "rate_limit"}:
+                    raise failure from None
                 if not failure.retryable or attempt == 2:
                     break
                 time.sleep(2 ** attempt)

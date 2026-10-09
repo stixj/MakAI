@@ -12,7 +12,7 @@ from backend.app.demo import demo_evaluate_job, sample_offers
 from backend.app.graph import build_graph
 from backend.app.schemas import JobOffer, RawJobOffer
 from backend.app.turso import TursoError, TursoEvaluationStore
-from backend.app.utils.fingerprint import generate_canonical_id
+from backend.app.utils.fingerprint import generate_canonical_id, legacy_canonical_id
 from backend.tests.test_turso import SQLiteHrana
 
 
@@ -30,17 +30,44 @@ class FingerprintTests(unittest.TestCase):
     def test_jobs_and_prace_za_rohem_have_identical_id(self):
         jobs = portal_offer()
         pzr = portal_offer("pzr", company="CESKA FIRMA a. s.",
-                           title="AI Automation Specialist f/m (Senior) - HPP", location=" BRNO ")
+                           title="AI Automation Specialist f/m (HPP)", location=" BRNO ")
         self.assertEqual(jobs.canonical_id, pzr.canonical_id)
         self.assertEqual(jobs.canonical_id, generate_canonical_id(jobs.company, jobs.title, "Brno"))
 
     def test_decorations_and_diacritics(self):
         expected = generate_canonical_id("Žlutý kůň", "Vývojář", "Plzeň")
         for company in ("ZLUTY KUN s.r.o.", "Žlutý kůň, a. s.", "Žlutý kůň spol. s r.o."):
-            for title in ("Vyvojar (m/ž)", "Vývojář f/m (Junior/Senior)",
-                          "Vývojář (zkrácený úvazek)", "Vývojář – part-time", "Vývojář (Senior HPP)"):
+            for title in ("Vyvojar (m/ž)", "Vývojář f/m (ičo)",
+                          "Vývojář (zkrácený úvazek)", "Vývojář – part-time",
+                          "Vývojář (HPP)", "Vývojář (DPP)", "Vývojář (vhodné pro absolventy)"):
                 with self.subTest(company=company, title=title):
                     self.assertEqual(generate_canonical_id(company, title, "PLZEN"), expected)
+
+    def test_seniority_and_technology_in_parentheses_remain_identity(self):
+        self.assertNotEqual(
+            generate_canonical_id("Acme", "Engineer (Junior)", "Praha"),
+            generate_canonical_id("Acme", "Engineer (Senior)", "Praha"),
+        )
+        qualifiers = ("Junior", "Senior", "Medior", "Lead", "Principal", "Intern",
+                      "Trainee", "Head of", "Python", "React", "DevOps", "Junior/Senior")
+        identities = {generate_canonical_id("Acme", f"Engineer ({q})", "Praha")
+                      for q in qualifiers}
+        self.assertEqual(len(identities), len(qualifiers))
+        self.assertNotIn(generate_canonical_id("Acme", "Engineer", "Praha"), identities)
+
+    def test_mixed_parentheses_remove_only_administrative_text(self):
+        expected = generate_canonical_id("Acme", "Engineer (Senior Python)", "Praha")
+        for title in ("Engineer (Senior Python HPP)", "Engineer (m/f Senior Python)",
+                      "Engineer (Senior Python, vhodné pro absolventy)"):
+            with self.subTest(title=title):
+                self.assertEqual(generate_canonical_id("Acme", title, "Praha"), expected)
+
+    def test_previously_stored_seniority_hash_is_upgraded_not_rejected(self):
+        offer = portal_offer(title="Engineer (Senior)")
+        old = legacy_canonical_id(offer.company, offer.title, offer.location or "")
+        self.assertNotEqual(old, offer.canonical_id)
+        restored = JobOffer.model_validate(offer.model_dump() | {"canonical_id": old})
+        self.assertEqual(restored.canonical_id, offer.canonical_id)
 
     def test_meaningful_role_and_location_differences_are_preserved(self):
         base = generate_canonical_id("Firma", "Vývojář (Python)", "Brno")
@@ -81,7 +108,7 @@ class EnrichmentTests(unittest.TestCase):
         self.addCleanup(self.transport.stop)
         self.jobs = portal_offer()
         self.pzr = portal_offer("pzr", company="Ceska firma a.s.",
-                                title="AI Automation Specialist f/m (Senior)", salary_raw="70 000 – 90 000 Kč")
+                                title="AI Automation Specialist f/m (HPP)", salary_raw="70 000 – 90 000 Kč")
         self.evaluation = demo_evaluate_job(sample_offers()[0])
 
     def rows(self):
@@ -163,6 +190,39 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(evaluator.call_count, 2)
         self.assertEqual(len(self.rows()), 2)
 
+    def test_seniority_variants_are_both_evaluated_and_persisted(self):
+        junior = portal_offer(title="Engineer (Junior)")
+        senior = portal_offer("pzr", title="Engineer (Senior)")
+        evaluator = Mock(return_value=self.evaluation)
+        result = build_graph(store=self.store, evaluator=evaluator).invoke(
+            {"offers": [junior, senior], "evaluations": {}, "errors": []})
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(evaluator.call_count, 2)
+        self.assertEqual(result["saved_ids"], [junior.id, senior.id])
+        self.assertEqual(len(self.rows()), 2)
+
+    def test_committed_results_survive_interruption_on_fifth_offer(self):
+        offers = [portal_offer(id=f"job-{i}", title=f"Engineer {i}",
+                               url=f"https://www.jobs.cz/rpd/{i}/") for i in range(10)]
+
+        def evaluator(offer):
+            committed = self.engine.db.execute("SELECT offer_id FROM makai_job_evaluations").fetchall()
+            self.assertEqual(len(committed), offers.index(offer))
+            self.assertFalse(self.engine.db.in_transaction)
+            if offer.id == offers[4].id:
+                raise KeyboardInterrupt()
+            return self.evaluation
+
+        # The first evaluation precedes table creation.
+        self.store.save([self.jobs], {self.jobs.id: self.evaluation})
+        self.engine.db.execute("DELETE FROM makai_job_evaluations")
+        with self.assertRaises(KeyboardInterrupt):
+            build_graph(store=self.store, evaluator=evaluator).invoke(
+                {"offers": offers, "evaluations": {}, "errors": []})
+        ids = self.engine.db.execute("SELECT offer_id FROM makai_job_evaluations ORDER BY offer_id").fetchall()
+        self.assertEqual(ids, [(offer.id,) for offer in offers[:4]])
+        self.assertFalse(self.engine.db.in_transaction)
+
     def test_failed_enrichment_rolls_back_and_does_not_trigger_llm(self):
         self.store.upsert_or_enrich_job(self.jobs, self.evaluation)
         before = self.rows()
@@ -207,6 +267,42 @@ class EnrichmentTests(unittest.TestCase):
         with self.assertRaises(TursoError):
             self.store.find_existing_job(self.pzr)
         self.assertEqual(self.rows(), before)
+        self.assertFalse(self.engine.db.in_transaction)
+
+    def test_indexed_legacy_identity_is_backfilled_before_junior_evaluation(self):
+        senior = portal_offer(title="Engineer (Senior)")
+        junior = portal_offer("pzr", title="Engineer (Junior)")
+        data = senior.model_dump(mode="json")
+        data["canonical_id"] = legacy_canonical_id(senior.company, senior.title, senior.location or "")
+        self.engine.db.execute(CREATE_TABLE)
+        self.engine.db.execute("INSERT INTO makai_job_evaluations VALUES (?, ?, ?, ?)",
+                               (senior.id, json.dumps(data), self.evaluation.model_dump_json(), "original"))
+        self.engine.db.execute("CREATE UNIQUE INDEX makai_job_canonical_idx ON makai_job_evaluations (json_extract(offer, '$.canonical_id'))")
+        evaluator = Mock(return_value=self.evaluation)
+        result = build_graph(store=self.store, evaluator=evaluator).invoke(
+            {"offers": [junior], "evaluations": {}, "errors": []})
+        self.assertEqual(result["errors"], [])
+        evaluator.assert_called_once_with(junior)
+        rows = self.engine.db.execute("SELECT offer, evaluation, evaluated_at FROM makai_job_evaluations WHERE offer_id=?", (senior.id,)).fetchall()
+        self.assertEqual(json.loads(rows[0][0])["canonical_id"], senior.canonical_id)
+        self.assertEqual(rows[0][1:], (self.evaluation.model_dump_json(), "original"))
+        self.assertEqual(len(self.rows()), 2)
+
+    def test_failed_indexed_legacy_backfill_restores_old_index_and_payload(self):
+        senior = portal_offer(title="Engineer (Senior)")
+        data = senior.model_dump(mode="json")
+        data["canonical_id"] = legacy_canonical_id(senior.company, senior.title, senior.location or "")
+        self.engine.db.execute(CREATE_TABLE)
+        self.engine.db.execute("INSERT INTO makai_job_evaluations VALUES (?, ?, ?, ?)",
+                               (senior.id, json.dumps(data), self.evaluation.model_dump_json(), "original"))
+        self.engine.db.execute("CREATE UNIQUE INDEX makai_job_canonical_idx ON makai_job_evaluations (json_extract(offer, '$.canonical_id'))")
+        before = self.rows()
+        self.engine.fail_commit = True
+        with self.assertRaises(TursoError):
+            self.store.find_existing_job(senior)
+        self.assertEqual(self.rows(), before)
+        self.assertEqual(self.engine.db.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='makai_job_canonical_idx'").fetchall(),
+                         [("makai_job_canonical_idx",)])
         self.assertFalse(self.engine.db.in_transaction)
 
 

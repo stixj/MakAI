@@ -9,7 +9,7 @@ from pydantic import (
     StringConstraints, field_validator, model_validator,
 )
 
-from .utils.fingerprint import generate_canonical_id
+from .utils.fingerprint import generate_canonical_id, legacy_canonical_id
 from .utils.sources import merge_sources, source_for_url
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -40,7 +40,8 @@ class JobOffer(BaseModel):
     def canonical_identity(self) -> Self:
         expected = generate_canonical_id(self.company, self.title, self.location or "")
         if self.canonical_id and self.canonical_id != expected:
-            raise ValueError("canonical_id does not match company, title and location.")
+            if self.canonical_id != legacy_canonical_id(self.company, self.title, self.location or ""):
+                raise ValueError("canonical_id does not match company, title and location.")
         object.__setattr__(self, "canonical_id", expected)
         object.__setattr__(self, "sources", merge_sources(
             self.sources, [source_for_url(str(self.url))],
@@ -87,3 +88,18 @@ class MakAIState(TypedDict):
     enriched_ids: NotRequired[list[str]]
     evaluation_blocked: NotRequired[dict | None]
     evaluation_limit_reached: NotRequired[bool]
+    evaluation_index: NotRequired[int]
+
+
+class MakAIStateUpdate(TypedDict, total=False):
+    """Partial node writes; required input channels need not be returned."""
+
+    offers: list[JobOffer]
+    evaluations: dict[str, JobFitEvaluation]
+    errors: list[str]
+    skipped_duplicates: list[str]
+    saved_ids: list[str]
+    enriched_ids: list[str]
+    evaluation_blocked: dict | None
+    evaluation_limit_reached: bool
+    evaluation_index: int

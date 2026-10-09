@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from backend.app.config import PROJECT_ROOT, Settings, get_settings
 from backend.app.demo import demo_evaluate_job, sample_offers
 from backend.app.evaluator import EvaluationError
-from backend.app.graph import build_graph
+from backend.app.graph import build_graph, filter_offers
 from backend.app.schemas import JobFitEvaluation, JobOffer, MakAIState
 from backend.app.storage import JsonEvaluationStore, PostgresEvaluationStore, create_store
 
@@ -36,7 +36,71 @@ class GraphTests(unittest.TestCase):
         self.assertEqual(result["errors"], [])
         self.assertEqual(result["evaluations"]["demo-ai-agent"].verdict, "STRONG_FIT")
         self.assertEqual(result["evaluations"]["demo-sales"].verdict, "NO_GO")
-        self.assertEqual(store.calls, [result["evaluations"]])
+        self.assertEqual(store.calls, [{offer.id: result["evaluations"][offer.id]}
+                                       for offer in sample_offers()])
+
+    def test_filter_returns_only_modified_channels(self):
+        state = initial_state()
+        update = filter_offers(state)
+        self.assertEqual(set(update), {"offers", "errors"})
+        self.assertEqual(state, initial_state())
+
+    def test_state_is_updated_and_saved_before_next_offer(self):
+        offers = sample_offers()
+        store = RecordingStore()
+
+        def evaluator(offer):
+            if offer.id == offers[1].id:
+                self.assertEqual(store.calls, [{offers[0].id: demo_evaluate_job(offers[0])}])
+            return demo_evaluate_job(offer)
+
+        updates = list(build_graph(store=store, evaluator=evaluator).stream(
+            initial_state(offers), stream_mode="updates"))
+        saves = [update["save"] for update in updates if "save" in update]
+        self.assertEqual([update["saved_ids"] for update in saves],
+                         [[offers[0].id], [offer.id for offer in offers]])
+        self.assertTrue(all("offers" not in update for update in saves))
+
+    def test_large_batch_does_not_hit_default_graph_recursion_limit(self):
+        base = sample_offers()[0]
+        offers = [JobOffer.model_validate(base.model_dump() | {
+            "id": f"offer-{i}", "title": f"Position {i}",
+            "url": f"https://example.com/{i}", "canonical_id": "", "sources": [],
+        }) for i in range(100)]
+        store = RecordingStore()
+        result = build_graph(store=store, evaluator=lambda offer: demo_evaluate_job(base)).invoke(initial_state(offers))
+        self.assertEqual(len(result["saved_ids"]), 100)
+        self.assertEqual(len(store.calls), 100)
+
+    def test_failed_save_does_not_report_success_and_next_save_can_recover(self):
+        offers = sample_offers()
+        store = Mock()
+        store.save.side_effect = [OSError("private database details"), None]
+        result = build_graph(store=store, evaluator=demo_evaluate_job).invoke(initial_state(offers))
+        self.assertEqual(result["saved_ids"], [offers[1].id])
+        self.assertEqual(len(result["evaluations"]), 2)
+        self.assertEqual(len(result["errors"]), 1)
+        self.assertNotIn("private", result["errors"][0])
+
+    def test_json_results_survive_interruption_on_fifth_offer(self):
+        base = sample_offers()[0]
+        offers = [JobOffer.model_validate(base.model_dump() | {
+            "id": f"offer-{i}", "title": f"Position {i}",
+            "url": f"https://example.com/{i}", "canonical_id": "", "sources": [],
+        }) for i in range(10)]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "results.json"
+
+            def evaluator(offer):
+                if offer.id == offers[4].id:
+                    raise KeyboardInterrupt()
+                return demo_evaluate_job(base)
+
+            with self.assertRaises(KeyboardInterrupt):
+                build_graph(store=JsonEvaluationStore(path), evaluator=evaluator).invoke(initial_state(offers))
+            persisted = json.loads(path.read_text(encoding="utf-8"))["results"]
+            self.assertEqual([item["offer"]["id"] for item in persisted],
+                             [offer.id for offer in offers[:4]])
 
     def test_failure_of_one_offer_preserves_and_saves_other_result(self) -> None:
         def sometimes_fails(offer: JobOffer) -> JobFitEvaluation:
