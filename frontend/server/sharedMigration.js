@@ -50,16 +50,19 @@ export async function importSnapshot(store, snapshot) {
     }
     await tx.execute({ sql: 'INSERT OR IGNORE INTO makai_profiles(id,payload) VALUES(?,?)', args: [profile.id, JSON.stringify(profile)] });
     await tx.execute(`CREATE TABLE IF NOT EXISTS ${table} (offer_id TEXT PRIMARY KEY, offer TEXT NOT NULL, evaluation TEXT NOT NULL, evaluated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
-    let inserted = 0;
-    for (const row of rows) {
+    const statements = rows.map(row => {
       const offer = JSON.parse(row.offer);
       // Existing evaluations take precedence; importing never changes their score, text or date.
-      const result = await tx.execute({ sql: `INSERT OR IGNORE INTO ${table}(offer_id,offer,evaluation,evaluated_at)
+      return { sql: `INSERT OR IGNORE INTO ${table}(offer_id,offer,evaluation,evaluated_at)
         SELECT ?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM ${table}
           WHERE offer_id=? OR json_extract(offer,'$.url')=?
           OR (? IS NOT NULL AND json_extract(offer,'$.canonical_id')=?))`,
-        args: [row.offer_id, row.offer, row.evaluation, row.evaluated_at, row.offer_id, offer.url, offer.canonical_id || null, offer.canonical_id || null] });
-      inserted += result.rowsAffected;
+        args: [row.offer_id, row.offer, row.evaluation, row.evaluated_at, row.offer_id, offer.url, offer.canonical_id || null, offer.canonical_id || null] };
+    });
+    let inserted = 0;
+    for (let offset = 0; offset < statements.length; offset += 100) {
+      const results = await tx.batch(statements.slice(offset, offset + 100));
+      inserted += results.reduce((sum, result) => sum + result.rowsAffected, 0);
     }
     // Existing online selection and automation are never overwritten by migration.
     if (snapshot.selected) await tx.execute({ sql: 'UPDATE makai_control SET profile_id=? WHERE id=1 AND profile_id IS NULL', args: [profile.id] });
