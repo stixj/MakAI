@@ -1,7 +1,7 @@
 export const VERDICTS = {
-  STRONG_FIT: { label: 'STRONG FIT', title: 'Silná shoda', color: 'bg-viatix-mint/20 text-viatix-teal', dot: 'bg-viatix-teal' },
-  POTENTIAL_FIT: { label: 'POTENTIAL FIT', title: 'Potenciální shoda', color: 'bg-viatix-amber/20 text-[#9a4b12]', dot: 'bg-viatix-amber-hot' },
-  NO_GO: { label: 'NO GO', title: 'Nízká shoda', color: 'bg-rose-500/10 text-rose-700', dot: 'bg-rose-500' },
+  STRONG_FIT: { label: 'Silná shoda', title: 'Silná shoda', color: 'bg-viatix-mint/20 text-viatix-teal', dot: 'bg-viatix-teal' },
+  POTENTIAL_FIT: { label: 'Možná shoda', title: 'Možná shoda', color: 'bg-viatix-amber/20 text-[#9a4b12]', dot: 'bg-viatix-amber-hot' },
+  NO_GO: { label: 'Nízká shoda', title: 'Nízká shoda', color: 'bg-rose-500/10 text-rose-700', dot: 'bg-rose-500' },
 };
 export function safeOfferUrl(value) {
   try {
