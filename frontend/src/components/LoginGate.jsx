@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { LockKeyhole } from 'lucide-react';
+import { cloneElement, useEffect, useState } from 'react';
+import { ChevronDown, LockKeyhole } from 'lucide-react';
 import { profileApi } from '../lib/profileApi.js';
 
 export default function LoginGate({ children }) {
@@ -49,14 +49,14 @@ export default function LoginGate({ children }) {
     finally { setBusy(false); }
   }
   if (authenticated) return <>
-    <div className="mx-auto flex max-w-6xl justify-end gap-3 px-5 pt-3"><button className="button-secondary" disabled={busy} onClick={() => { if (changing) closeChange(); else setChanging(true); setError(''); setNotice(''); }}>Změnit heslo</button><button className="button-secondary" disabled={busy} onClick={logout}>Odhlásit se</button></div>
+
     {changing && <section aria-labelledby="password-title" className="mx-auto mt-5 max-w-lg rounded-2xl border border-viatix-line bg-viatix-sand2 p-5"><h2 id="password-title" className="font-display text-xl font-semibold">Změna hesla</h2><form onSubmit={changePassword} className="mt-4 space-y-4"><fieldset disabled={busy} className="space-y-4">
       <label className="block text-sm">Současné heslo<input type="password" autoComplete="current-password" required maxLength={128} value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3" /></label>
       <label className="block text-sm">Nové heslo (alespoň 12 znaků)<input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={newPassword} onChange={event => setNewPassword(event.target.value)} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3" /></label>
       <label className="block text-sm">Nové heslo znovu<input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3" /></label>
       <div className="flex gap-3"><button className="button-primary">{busy ? 'Ukládám…' : 'Uložit nové heslo'}</button><button type="button" className="button-secondary" onClick={closeChange}>Zrušit</button></div>
     </fieldset></form></section>}
-    {error && <p role="alert" className="mx-auto mt-3 max-w-6xl px-5 text-red-700">{error}</p>}{notice && <p role="status" className="mx-auto mt-3 max-w-6xl px-5 text-viatix-teal">{notice}</p>}{children}</>;
+    {error && <p role="alert" className="mx-auto mt-3 max-w-6xl px-5 text-red-700">{error}</p>}{notice && <p role="status" className="mx-auto mt-3 max-w-6xl px-5 text-viatix-teal">{notice}</p>}{cloneElement(children, { accountControls: <details className="relative" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}><summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-viatix-line px-3 py-2 text-sm font-medium text-viatix-teal">Účet<ChevronDown className="h-4 w-4" aria-hidden="true" /></summary><nav aria-label="Nastavení účtu" className="absolute right-0 top-full z-20 mt-2 w-48 rounded-xl border border-viatix-line bg-viatix-sand2 p-2 shadow-lg"><button type="button" className="w-full rounded-lg px-3 py-3 text-left text-sm hover:bg-viatix-teal/5" disabled={busy} onClick={event => { event.currentTarget.closest('details').open = false; setChanging(true); setError(''); setNotice(''); }}>Změnit heslo</button><button type="button" className="w-full rounded-lg px-3 py-3 text-left text-sm hover:bg-viatix-teal/5" disabled={busy} onClick={logout}>Odhlásit se</button></nav></details> })}</>;
   return <main className="mx-auto flex min-h-screen max-w-lg items-center px-5 py-12"><section className="w-full rounded-3xl border border-viatix-line bg-viatix-sand2 p-7">
     <img src={import.meta.env.BASE_URL + 'brand/makai-logo-v1.png'} alt="MakAI" className="mb-8 w-40" />
     <LockKeyhole className="mb-4 h-7 w-7 text-viatix-teal" aria-hidden="true" />

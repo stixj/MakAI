@@ -15,7 +15,7 @@ function EmptyState({ title, children, action }) {
   </div>;
 }
 
-function Dashboard() {
+function Dashboard({ accountControls }) {
   const configured = hasJobSource();
   const local = ['local', 'cloud'].includes(import.meta.env.VITE_JOB_SOURCE);
   const [jobs, setJobs] = useState([]);
@@ -121,17 +121,20 @@ function Dashboard() {
           />
         </a>
         <span className="hidden text-xs text-muted-foreground sm:block">Tvůj další kariérní krok</span>
-        <span className="rounded-full border border-viatix-line/60 px-3 py-1.5 text-[11px] font-medium text-viatix-teal">{demo ? 'Ukázkový režim' : 'Pracovní přehled'}</span>
+        <div className="flex items-center gap-3">
+          {demo && <span className="rounded-full border border-viatix-line/60 px-3 py-1.5 text-xs text-viatix-teal">Ukázkový režim</span>}
+          {accountControls}
+        </div>
       </div>
     </header>
-    <main id="main" className="mx-auto max-w-6xl px-5 pb-12 pt-10 sm:px-8 sm:pt-14">
+    <main id="main" className="mx-auto max-w-6xl px-5 pb-12 pt-6 sm:px-8 sm:pt-8">
       <div className="flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
         <div>
           <p className="mb-3 font-display text-[11px] font-semibold uppercase tracking-[0.22em] text-viatix-teal">Příležitosti s potenciálem</p>
           <h1 className="font-display text-3xl font-semibold leading-tight tracking-tight sm:text-[38px]">Práce, která ti sedí.</h1>
           <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">Vyhodnocené nabídky na jednom místě. Projdi shodu, ověř podmínky a vyber svůj další krok.</p>
         </div>
-        {configured && <button type="button" onClick={refresh} disabled={status === 'loading'} className="button-primary self-start sm:self-auto"><RefreshCw className={'h-4 w-4 ' + (status === 'loading' ? 'animate-spin' : '')} aria-hidden="true" />Obnovit nabídky</button>}
+        {configured && <button type="button" onClick={refresh} disabled={status === 'loading'} className="button-secondary self-start sm:self-auto" title="Načte uložené výsledky. Nové hledání spustíš tlačítkem Hledat nové nabídky."><RefreshCw className={'h-4 w-4 ' + (status === 'loading' ? 'animate-spin' : '')} aria-hidden="true" />Aktualizovat přehled</button>}
       </div>
 
       {local && <ProfilePanel onJobsChanged={refresh} onProfileChanged={setProfileId} />}
@@ -148,17 +151,12 @@ function Dashboard() {
         </button>)}
       </section>}
 
-      <section className="mt-8" aria-label="Historie vyhodnocených nabídek" aria-busy={status === 'loading' || loadingResults}>
+      <section className="mt-8" aria-label="Nabídky pro tebe" aria-busy={status === 'loading' || loadingResults}>
         {status === 'ready' && <>
-          <h2 className="mb-2 font-display text-xl font-semibold">Historie vyhodnocených nabídek</h2>
-          <p className="mb-5 text-xs leading-relaxed text-muted-foreground">Uložené inzeráty a jejich hodnocení zůstávají dostupné i po dalším hledání. Obnovení přehledu načítá uloženou historii. Původní odkaz může časem přestat fungovat; text inzerátu najdeš v podrobnostech.</p>
+          <h2 className="mb-2 font-display text-xl font-semibold">Nabídky pro tebe</h2>
+          <p className="mb-5 text-xs leading-relaxed text-muted-foreground">Nabídky zůstávají dostupné i po dalším hledání. Původní text najdeš v detailu inzerátu.</p>
           {import.meta.env.VITE_JOB_SOURCE === 'cloud' && <div className="mb-5 flex flex-wrap items-center gap-3"><button type="button" aria-pressed={newOnly} disabled={!previousVisit || demo} onClick={() => { setNewOnly(value => !value); setPage(1); }} className={newOnly ? 'button-primary' : 'button-secondary'}>Nové od poslední návštěvy</button><span className="text-xs text-muted-foreground">{previousVisit ? 'Podle poslední návštěvy v tomto prohlížeči.' : 'Při první návštěvě zobrazujeme celou historii.'}</span></div>}
           <div className="mb-6 flex flex-col flex-wrap gap-3 sm:flex-row">
-            <label className="flex items-center gap-2 text-xs">Typ shody
-              <select aria-label="Filtrovat podle typu shody" value={verdict} onChange={event => changeFilter(setVerdict, event.target.value)} className="rounded-2xl border border-viatix-line bg-viatix-sand2 px-3 py-3 text-sm">
-                <option value="all">Všechny nabídky</option>{Object.entries(VERDICTS).map(([key, value]) => <option key={key} value={key}>{value.label} — {value.title}</option>)}
-              </select>
-            </label>
             <label className="flex items-center gap-2 text-xs">Na stránce
               <select aria-label="Počet nabídek na stránce" value={pageSize} onChange={event => changeFilter(setPageSize, Number(event.target.value))} className="rounded-2xl border border-viatix-line bg-viatix-sand2 px-3 py-3 text-sm">{[6, 12, 24, 48].map(size => <option key={size} value={size}>{size}</option>)}</select>
             </label>
@@ -182,7 +180,7 @@ function Dashboard() {
           {view.total > 0 && <div className="mb-5"><Pagination /></div>}
           {visible.length > 0 ? <div className="grid items-start gap-5 md:grid-cols-2 lg:grid-cols-3">{visible.map(job => <JobCard key={job.id} job={job} />)}</div> :
             <EmptyState title={totalAll ? 'Žádná nabídka neodpovídá filtrům' : 'První příležitost teprve přijde'} action={totalAll ? <button type="button" className="button-secondary" onClick={resetFilters}>Zrušit filtry</button> : null}>
-              {totalAll ? 'Zkus jiný název pozice nebo zobraz všechna hodnocení.' : 'Jakmile se uloží první hodnocení, najdeš ho tady. Potom přehled obnov.'}
+              {totalAll ? 'Zkus jiný název pozice nebo zobraz všechna hodnocení.' : 'Vytvoř profil a spusť první hledání. Vyhodnocené nabídky se potom objeví tady.'}
             </EmptyState>}
           {view.total > 0 && <div className="mt-6"><Pagination /></div>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}

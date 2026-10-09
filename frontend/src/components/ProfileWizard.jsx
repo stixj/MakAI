@@ -6,7 +6,7 @@ import { QUESTION_FIELDS, REVIEW_FIELDS, questionnairePayload, draftProfileConte
 const inputClass = 'mt-2 w-full rounded-xl border border-viatix-line bg-white/50 px-3 py-2.5 text-sm placeholder:text-muted-foreground';
 const numeric = value => value === '' ? null : Number(value);
 
-export default function ProfileWizard({ disabled, onActivate, onBusyChange = () => {} }) {
+export default function ProfileWizard({ disabled, onActivate, onBusyChange = () => {}, triggerLabel = 'Vytvořit profil s AI', primary = false }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(-1);
   const [cvFile, setCvFile] = useState(null);
@@ -74,7 +74,7 @@ export default function ProfileWizard({ disabled, onActivate, onBusyChange = () 
   }
   const fields = step === 0 ? QUESTION_FIELDS.slice(0, 3) : QUESTION_FIELDS.slice(3);
 
-  if (!open) return <div className="mt-4"><button type="button" className="button-secondary" disabled={disabled} onClick={openWizard}><Sparkles className="h-4 w-4" aria-hidden="true" />Vytvořit profil s AI</button><span className="ml-3 inline-block pt-2 text-xs text-muted-foreground">Ze životopisu nebo pomocí krátkých otázek</span></div>;
+  if (!open) return <div className="mt-4"><button type="button" className={primary ? 'button-primary' : 'button-secondary'} disabled={disabled} onClick={openWizard}><Sparkles className="h-4 w-4" aria-hidden="true" />{triggerLabel}</button><span className="ml-3 inline-block pt-2 text-xs text-muted-foreground">Ze životopisu nebo pomocí krátkých otázek</span></div>;
   return <section aria-labelledby="wizard-title" className="mt-5 rounded-2xl border border-viatix-teal/25 bg-white/40 p-4 sm:p-6">
     <div className="flex items-start justify-between gap-3"><div><h3 id="wizard-title" className="font-display text-lg font-semibold">Tvůj profil pro hledání</h3><p className="mt-1 text-xs text-muted-foreground">{step === -1 ? 'Vyber, jak začít' : step < 3 ? 'Krok ' + (step + 1) + ' ze 3 · ' + ['Směr a zkušenosti', 'Pracovní podmínky', 'Mzda a vytvoření návrhu'][step] : 'Kontrola návrhu před aktivací'}</p></div>
       <button type="button" aria-label="Zavřít dotazník" disabled={busy || disabled} className="rounded-lg p-2 text-viatix-teal" onClick={() => setOpen(false)}><X className="h-4 w-4" aria-hidden="true" /></button></div>
