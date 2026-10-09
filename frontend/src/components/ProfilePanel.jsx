@@ -106,12 +106,12 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
         <p className="text-[11px] font-semibold uppercase tracking-widest text-viatix-teal">Aktivní profil pro hledání</p>
         <h2 id="profile-title" className="mt-1 font-display text-xl font-semibold">{profile?.name || (busy ? 'Načítám tvůj profil…' : 'Vytvoř si profil pro hledání')}</h2>
       </div></div>
-      {profile && <span className="rounded-full bg-viatix-teal/10 px-3 py-1.5 text-xs text-viatix-teal">{profile.isDefault ? 'Výchozí profil' : 'Nahraný profil'}</span>}
+      {profile && <span className="rounded-full bg-viatix-teal/10 px-3 py-1.5 text-xs text-viatix-teal">{cloud ? 'Online profil' : profile.isDefault ? 'Výchozí profil' : 'Místní profil'}</span>}
     </div>
     {profile && <>
       <p className="mt-4 max-w-3xl text-sm leading-relaxed text-muted-foreground">{profile.isDefault
         ? 'Hledání vychází z tvého profilu uloženého v projektu: zkušeností, kariérního směru a pracovních podmínek.'
-        : 'Hledání a hodnocení vychází z tohoto nahraného profilu. Jeho výsledky se ukládají samostatně.'}</p>
+        : cloud ? 'Tento profil používá ruční i automatické hledání. Výsledky jsou uložené v online historii.' : 'Hledání vychází z tohoto místního profilu. Jeho výsledky se ukládají samostatně.'}</p>
       <div className="mt-5 grid gap-5 text-sm md:grid-cols-3">
         <div><h3 className="mb-2 font-semibold">Kariérní směr</h3><p className="leading-relaxed text-muted-foreground">{profile.searchTerms.slice(0, 5).join(' · ')}</p>
           {profile.searchTerms.length > 5 && <p className="mt-2 text-xs text-viatix-teal">A dalších {profile.searchTerms.length - 5} cílových rolí</p>}</div>
@@ -123,8 +123,17 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
         <button type="button" onClick={download} className="button-secondary mt-3">Stáhnout aktuální profil</button>
       </details>
     </>}
-    {cloud && <ProfileEditor key={profile?.id || 'new'} profile={profile} disabled={busy || running} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />}
-    {cloud && <SchedulePanel key={profile?.id || 'new'} hasProfile={Boolean(profile)} />}
+    {!busy && <details className="mt-5 border-t border-viatix-line/60 pt-4">
+      <summary className="cursor-pointer text-sm font-medium text-viatix-teal">{profile ? 'Správa profilu' : 'Vytvořit nebo nahrát profil'}</summary>
+      <ProfileEditor key={'editor-' + (profile?.id || 'new')} profile={profile} disabled={running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
+      <label className={'button-secondary relative mt-3 ' + (running || building ? 'opacity-50' : 'cursor-pointer')}>
+        <FileUp className="h-4 w-4" aria-hidden="true" />{profile ? 'Nahrát jiný profil' : 'Nahrát profil'}
+        <input aria-label="Nahrát jiný profil" type="file" accept=".md,.json" onChange={upload} disabled={running || building} className="absolute inset-0 w-full cursor-pointer opacity-0" />
+      </label>
+      {!cloud && profile && !profile.isDefault && <button type="button" className="button-secondary ml-3" disabled={running || building} onClick={() => changeProfile({ method: 'DELETE' })}>Použít můj výchozí profil</button>}
+      {!cloud && <ProfileWizard disabled={running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />}
+    </details>}
+    {cloud && <SchedulePanel key={'schedule-' + (profile?.id || 'new')} hasProfile={Boolean(profile)} />}
     {!cloud && <fieldset disabled={busy || running || building} className="mt-6 rounded-2xl border border-viatix-line/60 p-4">
       <legend className="px-2 text-sm font-semibold">Časové vymezení nového hledání</legend>
       <label className="flex flex-wrap items-center gap-3 text-sm">Zveřejněno
@@ -146,15 +155,9 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged }) {
       {!cloud && <label className="flex items-center gap-2 text-xs text-muted-foreground">Nabídek na portál
         <select aria-label="Počet nabídek na portál" value={limit} onChange={event => setLimit(event.target.value)} disabled={busy || running || building} className="rounded-xl border border-viatix-line bg-transparent px-3 py-2 text-sm">{[5, 10, 15, 30].map(value => <option key={value} value={value}>{value}</option>)}</select>
       </label>}
-      <label className={'button-secondary relative ' + (busy || running || building ? 'opacity-50' : 'cursor-pointer')}>
-        <FileUp className="h-4 w-4" aria-hidden="true" />Nahrát jiný profil
-        <input aria-label="Nahrát jiný profil" type="file" accept=".md,.json" onChange={upload} disabled={busy || running || building} className="absolute inset-0 w-full cursor-pointer opacity-0" />
-      </label>
-      {!cloud && profile && !profile.isDefault && <button type="button" className="button-secondary" disabled={busy || running || building} onClick={() => changeProfile({ method: 'DELETE' })}>Použít můj výchozí profil</button>}
       {!profile && !busy && <button type="button" className="button-secondary" onClick={() => window.location.reload()}>Načíst znovu</button>}
     </div>
-    {!cloud && <ProfileWizard disabled={busy || running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />}
-    <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Jobs.cz · Práce za rohem · DobráPráce.cz · JenPrace.cz · Atmoskop · Prace.cz · Automatický sběr a AI hodnocení podle profilu. Hodnocení používá nastavené API klíče. Profil nahraj jako .md nebo .json. Šablony a postup najdeš níže.</p>
+    <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Ruční hledání používá uložené nastavení. Obnovení nabídek pouze načte výsledky.' : 'Místní hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
     <details className="mt-4 rounded-2xl border border-viatix-line/60 px-4 py-3">
       <summary className="cursor-pointer text-sm font-medium text-viatix-teal">Šablony a návod pro nový profil</summary>
       <div className="mt-3 space-y-3 text-sm leading-relaxed text-muted-foreground">

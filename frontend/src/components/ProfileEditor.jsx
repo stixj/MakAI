@@ -4,6 +4,7 @@ import { REVIEW_FIELDS, draftProfileContent } from '../lib/profileDraft.js';
 
 const input = 'mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-2.5 text-sm';
 export default function ProfileEditor({ profile, disabled, onSave }) {
+  const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud';
   const [draft, setDraft] = useState(null);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -30,7 +31,7 @@ export default function ProfileEditor({ profile, disabled, onSave }) {
   return <div className="mt-4">{!draft ? <button className="button-secondary" disabled={disabled || busy} onClick={open}><Pencil className="h-4 w-4" />{profile ? 'Upravit profil' : 'Vytvořit profil'}</button> : <form onSubmit={save} className="rounded-2xl border border-viatix-line/60 bg-white/25 p-4 sm:p-5">
     <h3 className="font-display text-lg font-semibold">{profile ? 'Upravit profil' : 'Tvůj profil pro hledání'}</h3>
     {!profile && <p className="mt-2 text-xs text-amber-800">Formulář obsahuje ukázkové údaje. Před uložením je nahraď svými zkušenostmi a preferencemi.</p>}
-    <p className="mt-2 text-xs text-muted-foreground">Každou roli nebo preferenci napiš na samostatný řádek. Po uložení změn se automatika pozastaví; znovu ji zapni po kontrole profilu.</p>
+    <p className="mt-2 text-xs text-muted-foreground">Každou roli nebo preferenci napiš na samostatný řádek.{cloud ? ' Po uložení změn se automatika pozastaví; znovu ji zapni po kontrole profilu.' : ' Uložení změn aktivuje novou verzi místního profilu.'}</p>
     <fieldset disabled={disabled || busy} className="mt-5 space-y-4">
       <label className="block text-sm">Název profilu<input required maxLength="120" value={name} onChange={event => setName(event.target.value)} className={input} /></label>
       <div className="grid gap-4 sm:grid-cols-2">{REVIEW_FIELDS.map(([key, label]) => <label key={key} className="text-sm">{label}<textarea rows={3} value={draft.profile[key].join('\n')} onChange={event => change(key, event.target.value.split('\n'))} className={input} /></label>)}</div>

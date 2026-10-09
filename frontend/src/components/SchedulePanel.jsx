@@ -39,7 +39,10 @@ export default function SchedulePanel({ hasProfile }) {
     } catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   }
-  return <section aria-labelledby="schedule-title" className="mt-6 rounded-2xl border border-viatix-line/60 bg-white/25 p-4 sm:p-5">
+  return <details className="mt-5 rounded-2xl border border-viatix-line/60 bg-white/25 p-4 sm:p-5">
+    <summary className="cursor-pointer text-sm font-medium text-viatix-teal">Nastavení hledání a automatizace<span className="ml-3 text-xs font-normal text-muted-foreground">{saved ? saved.enabled ? 'Automatika zapnutá' : 'Automatika vypnutá' : 'Načítám…'}</span></summary>
+    {saved?.enabled && <p className="mt-2 text-xs text-muted-foreground">Příští hledání: {displayTime(saved.nextAt, saved.timezone)}</p>}
+    <section aria-labelledby="schedule-title" className="mt-6 rounded-2xl border border-viatix-line/60 bg-white/25 p-4 sm:p-5">
     <div className="flex items-center gap-3"><CalendarClock className="h-5 w-5 text-viatix-teal" aria-hidden="true" /><h3 id="schedule-title" className="font-display text-lg font-semibold">Automatické hledání</h3></div>
     <p className="mt-2 text-sm text-muted-foreground">Nastav, kdy pro tebe hledat. Tvůj počítač může být vypnutý.</p>
     {!draft ? <div className="mt-4"><p role="status" className="text-sm">{error ? 'Nastavení se nepodařilo načíst.' : 'Načítám plán…'}</p>{error && <button className="button-secondary mt-3" onClick={load}>Načíst znovu</button>}</div> : <form onSubmit={save}>
@@ -67,5 +70,5 @@ export default function SchedulePanel({ hasProfile }) {
     </form>}
     {notice && <p role="status" className="mt-3 text-sm text-viatix-teal">{notice}</p>}
     {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
-  </section>;
+  </section></details>;
 }
