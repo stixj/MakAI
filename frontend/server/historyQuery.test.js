@@ -26,3 +26,19 @@ test('rejects invalid paging and filters before querying',()=>{
  for(const suffix of ['page=0','page=1.5','pageSize=500','verdict=unknown','sort=unknown','period=unknown','search='+ 'x'.repeat(201)]) assert.throws(()=>historyQuery('/api/jobs?view=paged&'+suffix));
  assert.equal(historyQuery('/api/jobs?offset=50'),null);
 });
+
+test('last-visit filter keeps only newer evaluations across the entire history', async () => {
+ const db = new DatabaseSync(':memory:');
+ db.exec('CREATE TABLE makai_job_evaluations (offer_id TEXT PRIMARY KEY, offer TEXT, evaluation TEXT, evaluated_at TEXT)');
+ const insert = db.prepare('INSERT INTO makai_job_evaluations VALUES (?,?,?,?)');
+ for (const [id, date] of [['old','2026-10-08 05:00:00'],['boundary','2026-10-09T05:00:00Z'],['new','2026-10-09T05:01:00Z']])
+   insert.run(id, JSON.stringify({title:'Analytik',company:'Tým'}), JSON.stringify({score:80,verdict:'STRONG_FIT'}),date);
+ const client = { execute: async stmt => ({ rows: db.prepare(stmt.sql).all(...stmt.args) }) };
+ try {
+   const query = historyQuery('/api/jobs?view=paged&since=2026-10-09T05%3A00%3A00Z');
+   const result = await readHistoryPage(client, query);
+   assert.equal(result.totalAll, 3); assert.equal(result.total, 1);
+   assert.deepEqual(result.rows.map(row => row.offer_id), ['new']);
+   assert.throws(() => historyQuery('/api/jobs?view=paged&since=bad'));
+ } finally { db.close(); }
+});

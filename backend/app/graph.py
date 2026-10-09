@@ -48,10 +48,13 @@ def build_graph(
     store: EvaluationStore | None = None,
     settings: Settings | None = None,
     duplicate_checker: Callable[[str], bool] | None = None,
+    max_evaluations: int | None = None,
 ) -> CompiledStateGraph[MakAIState, None, MakAIState, MakAIState]:
     """Inject adapters for offline tests without changing the production graph."""
     active_store = store if store is not None else create_store(settings or get_settings())
     check_duplicate = duplicate_checker
+    if max_evaluations is not None and (type(max_evaluations) is not int or not 1 <= max_evaluations <= 100):
+        raise ValueError("Limit AI hodnocení musí být 1–100.")
 
     def deduplicate(state: MakAIState) -> MakAIState:
         offers: list[JobOffer] = []
@@ -92,7 +95,9 @@ def build_graph(
         evaluations = dict(state["evaluations"])
         errors = list(state["errors"])
         blocked = None
-        for offer in state["offers"]:
+        for index, offer in enumerate(state["offers"]):
+            if max_evaluations is not None and index >= max_evaluations:
+                break
             try:
                 evaluations[offer.id] = validate_evaluation(evaluator(offer))
             except EvaluationError as exc:
@@ -104,7 +109,8 @@ def build_graph(
                 errors.append(f"Evaluate {offer.id!r}: {exc}")
             except Exception as exc:
                 errors.append(f"Evaluate {offer.id!r}: {type(exc).__name__}.")
-        return {**state, "evaluations": evaluations, "errors": errors, "evaluation_blocked": blocked}
+        return {**state, "evaluations": evaluations, "errors": errors, "evaluation_blocked": blocked,
+                "evaluation_limit_reached": max_evaluations is not None and len(state["offers"]) > max_evaluations}
 
     def save(state: MakAIState) -> MakAIState:
         if not state["evaluations"]:

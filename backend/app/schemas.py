@@ -86,3 +86,4 @@ class MakAIState(TypedDict):
     saved_ids: NotRequired[list[str]]
     enriched_ids: NotRequired[list[str]]
     evaluation_blocked: NotRequired[dict | None]
+    evaluation_limit_reached: NotRequired[bool]

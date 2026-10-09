@@ -9,10 +9,12 @@ const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 export default defineConfig(({ mode }) => {
   const frontendEnv = loadEnv(mode, frontendRoot);
-  const local = frontendEnv.VITE_JOB_SOURCE === 'local';
+  const source = mode === 'cloud' ? 'cloud' : process.env.VITE_JOB_SOURCE || frontendEnv.VITE_JOB_SOURCE;
+  const local = source === 'local';
   const backendEnv = local ? loadEnv(mode, projectRoot, ['DATABASE_URL', 'TURSO_AUTH_TOKEN']) : {};
   return {
     base: process.env.VITE_BASE_PATH || '/',
+    ...(mode === 'cloud' ? { define: { 'import.meta.env.VITE_JOB_SOURCE': JSON.stringify('cloud') } } : {}),
     plugins: [react(), ...(local ? [localProfilesPlugin(projectRoot), localJobsPlugin({
       url: backendEnv.DATABASE_URL?.trim(), authToken: backendEnv.TURSO_AUTH_TOKEN?.trim(),
     })] : [])],

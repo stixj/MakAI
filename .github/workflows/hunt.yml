@@ -1,0 +1,45 @@
+name: MakAI search worker
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: makai-search
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      MAKAI_URL: ${{ vars.MAKAI_URL }}
+      MAKAI_WORKER_SECRET: ${{ secrets.MAKAI_WORKER_SECRET }}
+      RUN_FILE: ${{ runner.temp }}/makai-run.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check saved schedule and manual queue
+        id: claim
+        run: python backend/cloud_worker.py claim --file "$RUN_FILE"
+      - name: Install worker dependencies
+        if: steps.claim.outputs.pending == 'true'
+        run: pip install -r backend/requirements.txt
+      - name: Search and save results
+        if: steps.claim.outputs.pending == 'true'
+        run: python backend/cloud_worker.py run --file "$RUN_FILE"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'auto' }}
+      - name: Remove temporary profile snapshot
+        if: always()
+        run: rm -f -- "$RUN_FILE"

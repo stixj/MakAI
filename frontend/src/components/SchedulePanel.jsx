@@ -1,0 +1,71 @@
+import { useEffect, useState } from 'react';
+import { CalendarClock, Plus, X } from 'lucide-react';
+import { PORTALS, validateSchedule } from '../lib/schedule.js';
+import { profileApi } from '../lib/profileApi.js';
+
+const days = [[1, 'Po'], [2, 'Út'], [3, 'St'], [4, 'Čt'], [5, 'Pá'], [6, 'So'], [0, 'Ne']];
+const input = 'mt-2 w-full rounded-xl border border-viatix-line bg-white/50 px-3 py-2.5 text-sm';
+export const displayTime = (value, timezone = 'Europe/Prague') => value
+  ? new Intl.DateTimeFormat('cs-CZ', { timeZone: timezone, dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)) : '—';
+
+export default function SchedulePanel({ hasProfile }) {
+  const [draft, setDraft] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  async function load() {
+    try { const schedule = await profileApi('/api/schedule'); setSaved(schedule); setDraft(schedule); setDirty(false); setError(''); }
+    catch (failure) { setError(failure.message); }
+  }
+  useEffect(() => { load(); }, [hasProfile]);
+  useEffect(() => {
+    const timer = setInterval(async () => {
+      if (dirty || busy) return;
+      try { const schedule = await profileApi('/api/schedule'); setSaved(schedule); setDraft(schedule); } catch {}
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [dirty, busy]);
+  function change(key, value) { setDraft(previous => ({ ...previous, [key]: value })); setDirty(true); setNotice(''); }
+  async function save(event) {
+    event.preventDefault(); setError(''); setNotice('');
+    try { validateSchedule(draft); } catch (failure) { setError(failure.message); return; }
+    setBusy(true);
+    try {
+      const schedule = await profileApi('/api/schedule', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) });
+      setSaved(schedule); setDraft(schedule); setDirty(false);
+      setNotice(schedule.enabled ? 'Automatické hledání je zapnuté. Plán byl uložen.' : 'Plán byl uložen. Automatika je vypnutá; ruční hledání zůstává dostupné.');
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+  return <section aria-labelledby="schedule-title" className="mt-6 rounded-2xl border border-viatix-line/60 bg-white/25 p-4 sm:p-5">
+    <div className="flex items-center gap-3"><CalendarClock className="h-5 w-5 text-viatix-teal" aria-hidden="true" /><h3 id="schedule-title" className="font-display text-lg font-semibold">Automatické hledání</h3></div>
+    <p className="mt-2 text-sm text-muted-foreground">Nastav, kdy pro tebe hledat. Tvůj počítač může být vypnutý.</p>
+    {!draft ? <div className="mt-4"><p role="status" className="text-sm">{error ? 'Nastavení se nepodařilo načíst.' : 'Načítám plán…'}</p>{error && <button className="button-secondary mt-3" onClick={load}>Načíst znovu</button>}</div> : <form onSubmit={save}>
+      <fieldset disabled={busy} className="mt-5 space-y-5">
+        <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={draft.enabled} disabled={!hasProfile} onChange={event => change('enabled', event.target.checked)} className="h-5 w-5 accent-viatix-teal" />Zapnout automatické hledání</label>
+        {!hasProfile && <p className="text-xs text-muted-foreground">Nejdřív vytvoř nebo nahraj profil.</p>}
+        <div><p className="mb-2 text-sm font-medium">Ve které dny</p><div className="flex flex-wrap gap-2">{days.map(([day, label]) => <label key={day} className={'flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm ' + (draft.days.includes(day) ? 'border-viatix-teal bg-viatix-teal/10' : 'border-viatix-line')}><input type="checkbox" checked={draft.days.includes(day)} onChange={event => change('days', event.target.checked ? [...draft.days, day] : draft.days.filter(item => item !== day))} className="accent-viatix-teal" />{label}</label>)}</div></div>
+        <div><p className="mb-2 text-sm font-medium">Časy spuštění · {draft.times.length}× za vybraný den</p><div className="flex flex-wrap items-center gap-3">{draft.times.map((time, index) => <div key={index} className="flex items-center gap-1"><select aria-label={'Čas spuštění ' + (index + 1)} value={time} onChange={event => change('times', draft.times.map((value, i) => i === index ? event.target.value : value))} className="rounded-xl border border-viatix-line bg-white/50 px-3 py-2">{Array.from({ length: 96 }, (_, i) => `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`).map(value => <option key={value}>{value}</option>)}</select><button type="button" aria-label={'Odebrat čas ' + time} disabled={draft.times.length === 1} onClick={() => change('times', draft.times.filter((_, i) => i !== index))} className="rounded-lg p-2 text-muted-foreground"><X className="h-4 w-4" /></button></div>)}<button type="button" disabled={draft.times.length >= 6} className="button-secondary" onClick={() => change('times', [...draft.times, Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`).find(value => !draft.times.includes(value)) || '12:00'])}><Plus className="h-4 w-4" />Přidat čas</button></div>
+          <label className="mt-3 block text-xs">Časové pásmo<select value={draft.timezone} onChange={event => change('timezone', event.target.value)} className="ml-3 rounded-xl border border-viatix-line bg-transparent px-3 py-2"><option value="Europe/Prague">Český čas (letní i zimní)</option><option value="UTC">UTC</option></select></label>
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Plán se kontroluje přibližně každých 15 minut. Při vytížení může spuštění přijít později. Zmeškané časy se nesčítají do série hledání.</p>
+        </div>
+        <div><p className="mb-2 text-sm font-medium">Kde hledat</p><div className="grid gap-2 sm:grid-cols-2">{Object.entries(PORTALS).map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={draft.portals.includes(key)} onChange={event => change('portals', event.target.checked ? [...draft.portals, key] : draft.portals.filter(item => item !== key))} className="accent-viatix-teal" />{label}</label>)}</div></div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="text-sm">Nových nabídek na portál<input type="number" min="1" max="100" value={draft.limit} onChange={event => change('limit', Number(event.target.value))} className={input} /></label>
+          <label className="text-sm">Nejvýše AI hodnocení za běh<input type="number" min="1" max="100" value={draft.maxEvaluations} onChange={event => change('maxEvaluations', Number(event.target.value))} className={input} /></label>
+          <label className="text-sm">Nejvýše spuštění za den<input type="number" min="1" max="24" value={draft.maxDailyRuns} onChange={event => change('maxDailyRuns', Number(event.target.value))} className={input} /></label>
+        </div>
+        <p className="text-xs leading-relaxed text-muted-foreground">Denní limit zahrnuje automatická i ruční hledání. AI limit omezuje počet nových nabídek odeslaných k hodnocení, nikoli cenu v Kč. Uložené nabídky se znovu nehodnotí.</p>
+        <label className="block text-sm">Stáří inzerátů<select value={draft.period} onChange={event => change('period', event.target.value)} className={input}><option value="24h">Posledních 24 hodin</option><option value="7d">Posledních 7 dní</option><option value="30d">Posledních 30 dní</option><option value="all">Bez omezení</option></select></label>
+        {draft.period !== 'all' && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={draft.includeUnknownDates} onChange={event => change('includeUnknownDates', event.target.checked)} className="mt-0.5 accent-viatix-teal" />Zahrnout i inzeráty bez ověřitelného data zveřejnění</label>}
+        <div className="flex flex-wrap gap-3"><button className="button-primary" disabled={!dirty}>{busy ? 'Ukládám…' : 'Uložit nastavení'}</button>{dirty && <button type="button" className="button-secondary" onClick={() => { setDraft(saved); setDirty(false); setError(''); }}>Zahodit úpravy</button>}</div>
+      </fieldset>
+      {dirty && <p className="mt-3 text-xs text-amber-800">Máš neuložené změny. Ruční hledání používá poslední uložené nastavení.</p>}
+      <div className="mt-5 border-t border-viatix-line/60 pt-4 text-xs leading-relaxed"><p><strong>{saved.enabled ? 'Automatika zapnutá' : 'Automatika vypnutá'}</strong> · Příští plán: {displayTime(saved.nextAt, saved.timezone)}</p><p className="mt-1 text-muted-foreground">Poslední kontrola plánovače: {displayTime(saved.workerSeenAt, saved.timezone)}</p>{!saved.workerSeenAt ? <p className="mt-2 text-amber-800">Plánovač zatím nepotvrdil připojení. Uložený plán se začne vykonávat po jeho připojení.</p> : Date.now() - Date.parse(saved.workerSeenAt) > 45 * 60000 && <p className="mt-2 text-amber-800">Plánovač se delší dobu neozval. Ověř jeho připojení; plánované hledání může mít zpoždění.</p>}</div>
+    </form>}
+    {notice && <p role="status" className="mt-3 text-sm text-viatix-teal">{notice}</p>}
+    {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
+  </section>;
+}

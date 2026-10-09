@@ -10,12 +10,14 @@ export function historyQuery(url) {
   const sort = params.get('sort') ?? 'score';
   const historyPeriod = params.get('period') ?? 'all';
   const search = params.get('search') ?? '';
+  const since = params.get('since');
   if (!Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
       !['all', ...Object.keys(VERDICTS)].includes(verdict) || !['score', 'newest'].includes(sort) ||
-      !['all', '24h', '7d', '30d'].includes(historyPeriod) || search.length > 200) {
+      !['all', '24h', '7d', '30d'].includes(historyPeriod) || search.length > 200 ||
+      (since !== null && (!/^\d{4}-\d{2}-\d{2}T/.test(since) || !Number.isFinite(Date.parse(since))))) {
     throw new Error('Neplatné filtry nebo stránka historie.');
   }
-  return { page, pageSize, verdict, sort, historyPeriod, search };
+  return { page, pageSize, verdict, sort, historyPeriod, search, ...(since ? { since } : {}) };
 }
 
 export function historyView(metadata, query) {
@@ -24,7 +26,8 @@ export function historyView(metadata, query) {
     id: row.offer_id, offer: { title: row.title, company: row.company },
     evaluation: { verdict: row.verdict, score: Number(row.score) }, evaluatedAt: row.evaluated_at,
   }));
-  const base = filterJobs(jobs, { ...query, verdict: 'all' });
+  const base = filterJobs(jobs, { ...query, verdict: 'all' }).filter(job =>
+    !query.since || Date.parse(job.evaluatedAt.includes('T') ? job.evaluatedAt : job.evaluatedAt.replace(' ', 'T') + 'Z') > Date.parse(query.since));
   const counts = Object.fromEntries(Object.keys(VERDICTS).map(key => [key, base.filter(job => job.evaluation.verdict === key).length]));
   const filtered = query.verdict === 'all' ? base : base.filter(job => job.evaluation.verdict === query.verdict);
   const total = filtered.length;

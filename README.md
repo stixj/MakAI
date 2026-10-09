@@ -330,9 +330,10 @@ a [OpenAI ceníku](https://developers.openai.com/api/docs/pricing).
 
 ## Webový přehled (Vite + React)
 
-Samostatný frontend v `frontend/` zobrazuje hodnocení z Turso. Na localhostu
-používá čtecí API Vite s backendovým `.env`; při statickém nasazení samostatný
-read-only token v prohlížeči.
-Používá vizuální tokeny Viatixu a staví se na statické soubory pro Vercel.
-Spuštění, samostatný read-only token a nasazení popisuje
-[frontend/README.md](frontend/README.md). Python backend není součástí webového buildu.
+Frontend v `frontend/` nabízí na Vercelu přihlášení, editor profilu, nastavitelný
+plán automatického hledání, ruční spuštění a historii výsledků. Krátké Node API
+ukládá nastavení do Turso; Python sběr a hodnocení provádí GitHub Actions.
+Nasazení a chování automatizace popisuje [docs/online-setup.md](docs/online-setup.md).
+
+Lokální a statické režimy zůstávají dostupné podle
+[frontend/README.md](frontend/README.md). GitHub Pages publikuje statickou ukázku.

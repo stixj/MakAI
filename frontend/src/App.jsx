@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Briefcase, RefreshCw, Search, X } from 'lucide-react';
 import JobCard from './components/JobCard.jsx';
 import ProfilePanel from './components/ProfilePanel.jsx';
+import LoginGate from './components/LoginGate.jsx';
 import { VERDICTS, filterJobs, paginateJobs, pageNumbers } from './lib/jobs.js';
 import { hasJobSource, loadJobs, loadHistoryPage } from './lib/turso.js';
 
@@ -14,9 +15,9 @@ function EmptyState({ title, children, action }) {
   </div>;
 }
 
-export default function App() {
+function Dashboard() {
   const configured = hasJobSource();
-  const local = import.meta.env.VITE_JOB_SOURCE === 'local';
+  const local = ['local', 'cloud'].includes(import.meta.env.VITE_JOB_SOURCE);
   const [jobs, setJobs] = useState([]);
   const [status, setStatus] = useState(configured ? 'loading' : 'unconfigured');
   const [error, setError] = useState('');
@@ -32,8 +33,17 @@ export default function App() {
   const [loadingResults, setLoadingResults] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [demo, setDemo] = useState(false);
+  const [profileId, setProfileId] = useState(null);
+  const [newOnly, setNewOnly] = useState(false);
+  const [previousVisit, setPreviousVisit] = useState(null);
   const requestId = useRef(0);
   const loadedRevision = useRef(-1);
+
+  useEffect(() => {
+    setNewOnly(false); setPage(1);
+    try { const value = localStorage.getItem('makai-last-visit:' + profileId); setPreviousVisit(value && Number.isFinite(Date.parse(value)) ? value : null); }
+    catch { setPreviousVisit(null); }
+  }, [profileId]);
 
   function refresh() {
     requestId.current += 1;
@@ -50,7 +60,7 @@ export default function App() {
     const timer = setTimeout(async () => {
       try {
         const result = local
-          ? await loadHistoryPage({ page, pageSize, search, verdict, sort, historyPeriod })
+          ? await loadHistoryPage({ page, pageSize, search, verdict, sort, historyPeriod, since: newOnly ? previousVisit : null })
           : await loadJobs();
         if (current !== requestId.current) return;
         setJobs(result.jobs); setInvalidCount(result.invalidCount);
@@ -58,6 +68,7 @@ export default function App() {
         setPageResult(local ? result : null);
         loadedRevision.current = reloadKey;
         setStatus('ready');
+        if (profileId) { try { localStorage.setItem('makai-last-visit:' + profileId, new Date().toISOString()); } catch {} }
       } catch (failure) {
         if (current !== requestId.current) return;
         setError(failure.message);
@@ -65,7 +76,7 @@ export default function App() {
       } finally { if (current === requestId.current) setLoadingResults(false); }
     }, local && search ? 250 : 0);
     return () => { clearTimeout(timer); if (requestId.current === current) requestId.current += 1; };
-  }, [search, verdict, sort, historyPeriod, page, pageSize, reloadKey, demo]);
+  }, [search, verdict, sort, historyPeriod, page, pageSize, reloadKey, demo, profileId, newOnly, previousVisit]);
 
   async function showDemo() {
     const current = ++requestId.current;
@@ -83,7 +94,7 @@ export default function App() {
   const counts = local && !demo && pageResult ? pageResult.counts
     : Object.fromEntries(Object.keys(VERDICTS).map(key => [key, jobs.filter(job => job.evaluation.verdict === key).length]));
   const totalAll = local && !demo && pageResult ? pageResult.totalAll : jobs.length;
-  const resetFilters = () => { setSearch(''); setVerdict('all'); setHistoryPeriod('all'); setPage(1); };
+  const resetFilters = () => { setSearch(''); setVerdict('all'); setHistoryPeriod('all'); setNewOnly(false); setPage(1); };
 
   function Pagination() {
     return <nav aria-label="Stránkování nabídek" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-viatix-line/60 bg-viatix-sand2 p-3">
@@ -123,7 +134,7 @@ export default function App() {
         {configured && <button type="button" onClick={refresh} disabled={status === 'loading'} className="button-primary self-start sm:self-auto"><RefreshCw className={'h-4 w-4 ' + (status === 'loading' ? 'animate-spin' : '')} aria-hidden="true" />Obnovit nabídky</button>}
       </div>
 
-      {import.meta.env.VITE_JOB_SOURCE === 'local' && <ProfilePanel onJobsChanged={refresh} />}
+      {local && <ProfilePanel onJobsChanged={refresh} onProfileChanged={setProfileId} />}
 
       {demo && <div role="status" className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-viatix-amber/40 bg-viatix-amber/10 px-4 py-3 text-xs leading-relaxed">
         <span><strong>Ukázka vzhledu.</strong> Všechny nabídky i hodnocení jsou smyšlené.</span>
@@ -141,6 +152,7 @@ export default function App() {
         {status === 'ready' && <>
           <h2 className="mb-2 font-display text-xl font-semibold">Historie vyhodnocených nabídek</h2>
           <p className="mb-5 text-xs leading-relaxed text-muted-foreground">Uložené inzeráty a jejich hodnocení zůstávají dostupné i po dalším hledání. Obnovení přehledu načítá uloženou historii. Původní odkaz může časem přestat fungovat; text inzerátu najdeš v podrobnostech.</p>
+          {import.meta.env.VITE_JOB_SOURCE === 'cloud' && <div className="mb-5 flex flex-wrap items-center gap-3"><button type="button" aria-pressed={newOnly} disabled={!previousVisit || demo} onClick={() => { setNewOnly(value => !value); setPage(1); }} className={newOnly ? 'button-primary' : 'button-secondary'}>Nové od poslední návštěvy</button><span className="text-xs text-muted-foreground">{previousVisit ? 'Podle poslední návštěvy v tomto prohlížeči.' : 'Při první návštěvě zobrazujeme celou historii.'}</span></div>}
           <div className="mb-6 flex flex-col flex-wrap gap-3 sm:flex-row">
             <label className="flex items-center gap-2 text-xs">Typ shody
               <select aria-label="Filtrovat podle typu shody" value={verdict} onChange={event => changeFilter(setVerdict, event.target.value)} className="rounded-2xl border border-viatix-line bg-viatix-sand2 px-3 py-3 text-sm">
@@ -162,7 +174,7 @@ export default function App() {
           </div>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <p role="status">{view.total ? (view.page - 1) * view.pageSize + 1 : 0}–{Math.min(view.page * view.pageSize, view.total)} z {view.total} odpovídajících nabídek</p>
-            {(search || verdict !== 'all' || historyPeriod !== 'all') && <button type="button" onClick={resetFilters} className="rounded-lg p-1 font-medium text-viatix-teal">Zrušit filtry</button>}
+            {(search || verdict !== 'all' || historyPeriod !== 'all' || newOnly) && <button type="button" onClick={resetFilters} className="rounded-lg p-1 font-medium text-viatix-teal">Zrušit filtry</button>}
           </div>
           {invalidCount > 0 && <p role="status" className="mb-4 rounded-xl bg-viatix-amber/15 p-3 text-xs">Počet přeskočených neplatných záznamů: {invalidCount}.</p>}
           {limitReached && <p className="mb-4 text-xs text-muted-foreground">Přímé připojení načítá posledních 500 hodnocení.</p>}
@@ -190,4 +202,8 @@ export default function App() {
       </footer>
     </main>
   </div>;
+}
+
+export default function App() {
+  return import.meta.env.VITE_JOB_SOURCE === 'cloud' ? <LoginGate><Dashboard /></LoginGate> : <Dashboard />;
 }

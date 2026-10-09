@@ -18,9 +18,9 @@ from app.storage import JsonEvaluationStore, create_store
 from app.turso import TursoEvaluationStore
 
 
-def hunt(payload: dict) -> dict:
+def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
     profile_id = payload["profileId"]
-    profile, _, _ = get_profile(profile_id)
+    profile = profile_override if profile_override is not None else get_profile(profile_id)[0]
     limit = payload.get("limit", 10)
     if type(limit) is not int or not 1 <= limit <= 100:
         raise ValueError("Limit musí být 1–100.")
@@ -32,14 +32,15 @@ def hunt(payload: dict) -> dict:
     if not ((settings.llm_provider in {"auto", "gemini"} and settings.gemini_api_key) or
             (settings.llm_provider in {"auto", "openai"} and settings.openai_api_key)):
         raise ValueError("Chybí API klíč pro hodnocení nabídek v .env.")
-    personal = profile_id == "default"
-    store = create_store(settings) if personal else JsonEvaluationStore(profile_directory(profile_id) / "results.json", merge_existing=True)
-    if personal:
+    personal = profile_id == "default" and profile_override is None
+    store = store_override if store_override is not None else (create_store(settings) if personal else JsonEvaluationStore(profile_directory(profile_id) / "results.json", merge_existing=True))
+    remote = isinstance(store, TursoEvaluationStore)
+    if personal or remote:
         if not isinstance(store, TursoEvaluationStore):
             raise ValueError("Výchozí profil vyžaduje nakonfigurované Turso.")
         store.check_connection()
-    previous = result_rows(profile_id) if not personal else []
-    if personal:
+    previous = result_rows(profile_id) if not remote else []
+    if remote:
         known_urls, known_ids = store.known_offer_identities()
     else:
         known = [json.loads(row["offer"]) for row in previous]
@@ -72,16 +73,18 @@ def hunt(payload: dict) -> dict:
             sources.append({"portal": SCRAPERS[portal].portal, "found": 0, "status": "error", "error": str(exc)})
     # Keep local history and avoid repeated paid evaluations for the same candidate.
     previous_urls = {json.loads(row["offer"])["url"] for row in previous}
-    if personal:
+    if remote:
         for offer in selection.known_matches:
             store.upsert_or_enrich_job(offer)
     with evaluation_context(profile, personal_history=personal):
         result = build_graph(settings=settings, store=store,
+                             max_evaluations=payload.get("maxEvaluations"),
                              duplicate_checker=lambda url: url in previous_urls).invoke(
                                  {"offers": offers, "evaluations": {}, "errors": errors})
     return {"profileId": profile_id, "found": len(offers), "evaluated": len(result["evaluations"]),
             "saved": len(result["saved_ids"]), "errors": result["errors"], "sources": sources,
             "evaluationBlocked": result.get("evaluation_blocked"),
+            "evaluationLimitReached": result.get("evaluation_limit_reached", False),
             "period": payload.get("period", "all"),
             "skippedDuplicates": len(result.get("skipped_duplicates", [])) + sum(s.get("duplicates", 0) + s.get("knownUrls", 0) for s in sources),
             "skippedUnknownDate": sum(s.get("unknownDate", 0) for s in sources),
@@ -114,6 +117,18 @@ def main() -> int:
             output = generate_profile(payload)
         elif action == "hunt":
             output = hunt(payload)
+        elif action == "cloud-hunt":
+            import hashlib
+            from app.profile import parse_candidate_profile
+            from app.cloud_storage import ProfileTursoStore
+            content, profile_id = payload["profile"]["content"], payload["profile"]["id"]
+            if hashlib.sha256(content.encode("utf-8")).hexdigest() != profile_id:
+                raise ValueError("Profil běhu neodpovídá uložené verzi.")
+            settings = get_settings()
+            if not settings.database_url or not settings.turso_auth_token:
+                raise ValueError("Chybí připojení k Turso pro online hledání.")
+            store = ProfileTursoStore(settings.database_url.get_secret_value(), settings.turso_auth_token.get_secret_value(), profile_id)
+            output = hunt({**payload["options"], "profileId": profile_id}, profile_override=parse_candidate_profile(content), store_override=store)
         else:
             raise ValueError("Neznámá akce.")
         print(json.dumps(output, ensure_ascii=False))

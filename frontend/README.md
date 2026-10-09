@@ -13,11 +13,17 @@ zdroje nabídek zobrazuje úvod aplikace a tlačítko pro explicitně označenou
 ukázku se smyšlenými daty. Hledání a správa profilu vyžadují backend;
 GitHub Pages je nespouští. Reálná data vyžadují samostatné zabezpečené API.
 
-Samostatná Vite + React SPA. Vercel publikuje pouze statické soubory z `dist/`;
-frontend nepotřebuje Python, API server ani serverless funkce. Čte již uložená
-hodnocení z Turso; localhost může použít místní server a statické nasazení
-`@libsql/client/web` se samostatným read-only tokenem. Spuštění sběru a evaluace
-nabídek zůstává samostatnou úlohou existujícího backendu.
+## Plná online aplikace na Vercelu
+
+Vercel projekt má Root Directory `frontend`. Build `npm run build:cloud` nasadí
+React rozhraní i zabezpečené Node API z `api/`. V aplikaci lze upravovat profil,
+nastavit automatický plán, spustit nebo zastavit hledání a prohlížet historii.
+Python hledání běží v GitHub Actions a výsledky i nastavení zůstávají v Turso.
+Serverové databázové a AI klíče se nikdy neposílají do prohlížeče.
+Konfiguraci a chování plánovače popisuje [online návod](../docs/online-setup.md).
+
+Níže jsou zachované lokální a samostatné statické režimy. Přímý read-only token
+se týká pouze statického režimu, nikoli plné online aplikace.
 
 ## Lokální spuštění
 
