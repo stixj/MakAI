@@ -1,5 +1,18 @@
 # MakAI frontend
 
+## GitHub Pages
+
+Workflow `.github/workflows/pages.yml` spouští testy, sestaví `frontend/dist`
+a publikuje jej na `https://stixj.github.io/MakAI/`. V nastavení repozitáře
+`Settings → Pages → Source` musí být vybráno `GitHub Actions`.
+Build používá `VITE_BASE_PATH=/MakAI/`; lokální běh a ostatní hostingy
+nadále používají `/`. Workflow lze také spustit ručně z karty Actions.
+
+Pages nasazení neobsahuje databázové tokeny ani osobní profil. Bez připojeného
+zdroje nabídek zobrazuje úvod aplikace a tlačítko pro explicitně označenou
+ukázku se smyšlenými daty. Hledání a správa profilu vyžadují backend;
+GitHub Pages je nespouští. Reálná data vyžadují samostatné zabezpečené API.
+
 Samostatná Vite + React SPA. Vercel publikuje pouze statické soubory z `dist/`;
 frontend nepotřebuje Python, API server ani serverless funkce. Čte již uložená
 hodnocení z Turso; localhost může použít místní server a statické nasazení
