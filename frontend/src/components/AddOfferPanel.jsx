@@ -13,11 +13,13 @@ export default function AddOfferPanel({ profileId, onClose, onAdded, onDuplicate
   const [reactionDetails, setReactionDetails] = useDraftState(draftKey + ':reaction', '');
   const [step, setStep] = useState('link');
   const [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [duplicate, setDuplicate] = useState(null);
-  const urlInput = useRef(null), titleInput = useRef(null);
+  const urlInput = useRef(null), titleInput = useRef(null), descriptionInput = useRef(null);
+  const [descriptionOpen, setDescriptionOpen] = useState(false);
   const draftExists = Object.values(offer).some(value => value.trim());
 
   useEffect(() => { urlInput.current?.focus(); }, []);
   useEffect(() => { if (step === 'review' && !offer.title.trim()) titleInput.current?.focus(); }, [step, offer.title]);
+  useEffect(() => { if (descriptionOpen) descriptionInput.current?.focus(); }, [descriptionOpen]);
 
   function clearAllDrafts() {
     [draftKey, draftKey + ':date', draftKey + ':applied', draftKey + ':salary', draftKey + ':reaction'].forEach(clearDraft);
@@ -30,8 +32,12 @@ export default function AddOfferPanel({ profileId, onClose, onAdded, onDuplicate
       setOffer(previous => ({ ...previous, ...Object.fromEntries(Object.entries(result.offer || {}).filter(([key, value]) => key in previous && value)) }));
       setNotice(result.notice || 'Zkontroluj předvyplněné údaje a před uložením je případně uprav.');
       setStep('review');
-    } catch {
-      setNotice('Stránka nepovolila automatické načtení textu. Nevadí, údaje můžeš doplnit ručně.');
+    } catch (failure) {
+      const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+      const networkError = offline || failure instanceof TypeError || ['AbortError','TimeoutError'].includes(failure?.name);
+      setNotice(networkError
+        ? 'Nepodařilo se spojit se službou. Zkontroluj připojení a zkus načtení znovu, nebo nabídku doplň ručně.'
+        : 'Web nabídku automaticky nezpřístupnil. Nevadí, údaje můžeš doplnit ručně.');
       setStep('review');
     } finally { setBusy(false); }
   }
@@ -62,14 +68,21 @@ export default function AddOfferPanel({ profileId, onClose, onAdded, onDuplicate
     </div> : <form onSubmit={save} className="mt-5 animate-reveal space-y-4">
       <p className="text-sm leading-relaxed text-ink-secondary">Zkontroluj údaje, které jsme našli. Nabídku uložíme až po tvém potvrzení.</p>
       {notice && <p role="status" className="rounded-xl bg-fit-potential-bg text-fit-potential-text p-3 text-sm leading-relaxed">{notice}</p>}
-      <div className="grid gap-4 sm:grid-cols-2">{field('title', 'Název pozice', true, titleInput)}{field('company', 'Firma', true)}{field('location', 'Lokalita')}{field('salary_raw', 'Mzda a podmínky')}</div>
-      <details className="rounded-xl border border-border-subtle bg-surface p-4"><summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-brand">Text inzerátu a další údaje</summary><label className="mt-2 block text-sm">Text inzerátu <span className="font-normal text-ink-secondary">(potřebný pro AI hodnocení)</span><textarea value={offer.raw_description} maxLength={30000} rows={6} onChange={event => setOffer(previous => ({ ...previous, raw_description: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-border-subtle bg-white p-3 text-sm leading-relaxed" /></label>
+      <div className="grid gap-4 sm:grid-cols-2">{field('title', 'Název pozice', true, titleInput)}{field('company', 'Firma', true)}{field('location', 'Město / lokalita')}{field('salary_raw', 'Mzda a podmínky')}</div>
+      <section aria-label="Shrnutí nabídky" className="grid gap-3 rounded-2xl border border-border-subtle bg-surface-subtle p-4 sm:grid-cols-2">
+        {[['Pozice',offer.title],['Firma',offer.company],['Město',offer.location],['Mzda',offer.salary_raw]].map(([label,value])=><div key={label}><p className="text-xs font-medium text-ink-secondary">{label}</p><p className="mt-1 break-words text-sm font-semibold">{value?.trim()|| (label==='Mzda'?'Mzda neuvedena':'Doplnit')}</p></div>)}
+      </section>
+      {!offer.raw_description.trim() && <div className="rounded-xl border border-fit-potential-bg bg-fit-potential-bg/60 p-4 text-sm text-fit-potential-text">
+        <p className="font-medium">{offer.url ? '⚠️ Text inzerátu se nepodařilo automaticky stáhnout. Pro AI hodnocení je potřeba vložit text.' : 'Pro AI hodnocení je potřeba vložit text inzerátu.'}</p>
+        <button type="button" className="mt-2 min-h-11 font-semibold text-brand underline underline-offset-2" onClick={()=>{setDescriptionOpen(true);document.getElementById('offer-description-details')?.setAttribute('open','');}}>Vložit text ručně</button>
+      </div>}
+      <details id="offer-description-details" open={descriptionOpen || undefined} className="rounded-xl border border-border-subtle bg-surface p-4" onToggle={event=>setDescriptionOpen(event.currentTarget.open)}><summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-brand">Text inzerátu a další údaje</summary><label className="mt-2 block text-sm">Text inzerátu <span className="font-normal text-ink-secondary">(potřebný pro AI hodnocení)</span><textarea ref={descriptionInput} value={offer.raw_description} maxLength={30000} rows={6} onChange={event => setOffer(previous => ({ ...previous, raw_description: event.target.value }))} className="mt-1.5 w-full rounded-xl border border-border-subtle bg-white p-3 text-sm leading-relaxed" /></label>
         <label className="mt-4 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={applied} onChange={event => setApplied(event.target.checked)} className="h-5 w-5 accent-brand" />Na tuto nabídku jsem už reagoval/a</label>
         {applied && <div className="mt-3 grid gap-3 sm:grid-cols-2"><label className="block text-sm">Datum reakce<input type="date" value={appliedAt} onChange={event => setAppliedAt(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3" /></label><label className="block text-sm">Mzda uvedená firmě<input value={salaryExpectation} maxLength={1000} onChange={event => setSalaryExpectation(event.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3" /></label><label className="block text-sm sm:col-span-2">Poznámka k odeslané reakci<textarea rows={2} value={reactionDetails} maxLength={5000} onChange={event => setReactionDetails(event.target.value)} className="mt-1.5 w-full rounded-xl border border-border-subtle bg-white p-3" /></label></div>}
       </details>
       {duplicate && <div role="status" className="rounded-xl bg-fit-potential-bg text-fit-potential-text p-3 text-sm"><p>Tuto nabídku už máš: {duplicate.offer.title} · {duplicate.offer.company}.</p><button type="button" className="button-secondary mt-2 min-h-11" onClick={() => onDuplicate(duplicate.offerId)}>Otevřít existující nabídku</button></div>}
       {error && <p role="alert" className="rounded-xl bg-danger-bg p-3 text-sm text-danger">{error}</p>}
-      <div className="flex flex-col-reverse gap-3 border-t border-border-subtle pt-4 sm:flex-row sm:items-center sm:justify-between"><button type="button" className="button-secondary min-h-11" disabled={busy} onClick={() => { setStep('link'); setNotice(''); setError(''); }}><ArrowLeft className="h-4 w-4" />Zpět k odkazu</button><button type="submit" className="button-primary min-h-11" disabled={busy}>{busy ? <><Loader2 className="h-4 w-4 animate-spin" />Ukládám…</> : applied ? 'Uložit do přihlášek' : 'Uložit do mých nabídek'}</button></div>
+      <div className="sticky bottom-0 z-20 -mx-5 flex flex-col-reverse gap-3 border-t border-border-subtle bg-surface/95 px-5 py-4 shadow-soft backdrop-blur sm:-mx-7 sm:flex-row sm:items-center sm:justify-between sm:px-7"><button type="button" className="button-secondary min-h-11" disabled={busy} onClick={() => { setStep('link'); setNotice(''); setError(''); }}><ArrowLeft className="h-4 w-4" />Zpět k odkazu</button><button type="submit" className="button-primary min-h-11" disabled={busy}>{busy ? <><Loader2 className="h-4 w-4 animate-spin" />Ukládám…</> : applied ? 'Uložit do přihlášek' : 'Uložit do mých nabídek'}</button></div>
     </form>}
   </section>;
 }

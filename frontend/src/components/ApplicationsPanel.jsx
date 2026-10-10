@@ -5,7 +5,7 @@ import { APPLICATION_STATUSES, CLOSED_STATUSES, applicationSummary, applicationN
 import { formatDate } from '../lib/jobs.js';
 import ApplicationDetail from './ApplicationDetail.jsx';
 export default function ApplicationsPanel({profileId,reloadKey,selectedOffer,onSelected,onChanged}) {
-  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[filter,setFilter]=useState('active'),[priorityFirst,setPriorityFirst]=useState(false),[priorityBusy,setPriorityBusy]=useState(null);
+  const [items,setItems]=useState([]),[loading,setLoading]=useState(true),[error,setError]=useState(''),[filter,setFilter]=useState('active'),[priorityFirst,setPriorityFirst]=useState(false),[priorityBusy,setPriorityBusy]=useState(null),[statusBusy,setStatusBusy]=useState(null),[statusSaved,setStatusSaved]=useState(null);
   useEffect(()=>{let alive=true;setItems([]);setLoading(true);setError('');profileApi('/api/applications').then(result=>{if(alive){setItems(result.items);setLoading(false);}}).catch(e=>{if(alive){setError(e.message);setLoading(false);}});return()=>{alive=false;};},[profileId,reloadKey]);
   const summary=useMemo(()=>applicationSummary(items),[items]);
   const visible=items.filter(item=>{
@@ -20,6 +20,16 @@ export default function ApplicationsPanel({profileId,reloadKey,selectedOffer,onS
     return true;
   }).sort((a,b)=>priorityFirst?Number(!!b.interest?.priority)-Number(!!a.interest?.priority):0);
   const offers=items.filter(item=>['offer','accepted'].includes(item.application.status));
+  async function changeStatus(item,status){
+    if(status===item.application.status)return;
+    setStatusBusy(item.id);setStatusSaved(null);setError('');
+    try{
+      const result=await profileApi('/api/applications',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({profileId,offerId:item.id,revision:item.revision,application:{...item.application,status}})});
+      setItems(previous=>previous.map(current=>current.id===item.id?{...current,application:result.application,revision:result.revision}:current));
+      setStatusSaved(item.id);onChanged();setTimeout(()=>setStatusSaved(current=>current===item.id?null:current),2500);
+    }catch(e){setError(e.message||'Stav se nepodařilo uložit. Zkus to znovu.');}
+    finally{setStatusBusy(null);}
+  }
   async function togglePriority(item){setPriorityBusy(item.id);setError('');try{await profileApi('/api/jobs',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({profileId,offerId:item.id,changes:{priority:!item.interest?.priority}})});onChanged();}catch(e){setError(e.message);}finally{setPriorityBusy(null);}}
   if (selectedOffer) return <ApplicationDetail key={profileId+':'+selectedOffer} profileId={profileId} offerId={selectedOffer} onClose={() => onSelected(null)} onChanged={onChanged} />;
   return <section aria-label="Moje přihlášky" className="mt-6">
@@ -42,7 +52,7 @@ export default function ApplicationsPanel({profileId,reloadKey,selectedOffer,onS
     {!loading&&!error&&<div className="mt-5 grid gap-3 sm:grid-cols-2">{visible.map(item=>{
       const next=applicationNextStep(item.application);
       return <article key={item.id} className="flex flex-col rounded-2xl border border-border-subtle bg-surface p-5">
-        <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-medium text-brand">{APPLICATION_STATUSES[item.application.status]}</p><button type="button" disabled={priorityBusy===item.id} aria-pressed={!!item.interest?.priority} aria-label={(item.interest?.priority?'Zrušit prioritu: ':'Označit prioritu: ')+item.offer.title} onClick={()=>togglePriority(item)} className={'inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs '+(item.interest?.priority?'font-semibold text-brand':'text-ink-secondary')}><Star className="h-4 w-4" fill={item.interest?.priority?'currentColor':'none'} aria-hidden="true" />{item.interest?.priority?'Moje priorita':'Priorita'}</button></div>
+        <div className="flex flex-wrap items-center justify-between gap-2"><label className="inline-flex items-center gap-2 text-xs font-medium text-brand">Stav<select aria-label={'Změnit stav přihlášky: '+item.offer.title} value={item.application.status} disabled={statusBusy===item.id} onChange={event=>changeStatus(item,event.target.value)} className="min-h-10 rounded-full border border-border-subtle bg-surface-subtle px-3 text-xs font-semibold text-brand disabled:opacity-60">{Object.entries(APPLICATION_STATUSES).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select>{statusSaved===item.id&&<span role="status" className="font-normal text-brand">Změna uložena</span>}</label><button type="button" disabled={priorityBusy===item.id} aria-pressed={!!item.interest?.priority} aria-label={(item.interest?.priority?'Zrušit prioritu: ':'Označit prioritu: ')+item.offer.title} onClick={()=>togglePriority(item)} className={'inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-xs '+(item.interest?.priority?'font-semibold text-brand':'text-ink-secondary')}><Star className="h-4 w-4" fill={item.interest?.priority?'currentColor':'none'} aria-hidden="true" />{item.interest?.priority?'Moje priorita':'Priorita'}</button></div>
         <h3 className="mt-2 text-lg font-semibold">{item.offer.title}</h3><p className="mt-1 text-sm text-ink-secondary">{item.offer.company}</p>
         <p className="mt-3 text-xs text-ink-secondary">{item.application.appliedAt?'Odesláno '+formatDate(item.application.appliedAt):'Datum odeslání není doplněné'}{next.daysSinceApplied!==null&&' · '+next.daysSinceApplied+' dní od odeslání'}</p>
         <div className="mt-4 flex-1 rounded-xl border border-border-subtle bg-white p-3"><p className="text-xs text-ink-secondary">{next.kind==='closed'?'Výsledek':'Další krok'}</p><p className="mt-1 text-sm font-medium">{next.text}</p>{next.at&&<p className="mt-1 text-sm text-brand">{formatInterviewDate(next.at)}</p>}{next.due&&<p className={'mt-1 text-xs '+(next.overdue?'text-danger':'text-ink-secondary')}>{next.overdue?'Po termínu · ':'Do '}{formatDate(next.due)}</p>}</div>

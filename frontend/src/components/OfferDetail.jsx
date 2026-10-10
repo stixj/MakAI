@@ -11,7 +11,7 @@ const monthlySalary = value => Number.isInteger(value) ? new Intl.NumberFormat('
 
 export default function OfferDetail({ profileId, offerId, onClose, onStateChange, onApplication, onChanged, reloadKey }) {
   const [detail, setDetail] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
-  const [deleteConfirm, setDeleteConfirm] = useState(false), [deleting, setDeleting] = useState(false), [evaluating, setEvaluating] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false), [deleting, setDeleting] = useState(false), [evaluating, setEvaluating] = useState(false), [editingDescription, setEditingDescription] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -59,6 +59,7 @@ export default function OfferDetail({ profileId, offerId, onClose, onStateChange
   const verdict = evaluation ? VERDICTS[evaluation.verdict] : null;
   const needsEvaluation = !evaluation || detail?.evaluationStale;
   const sources = detail ? getOfferSources(detail.offer) : [];
+  const salarySummary = evaluation ? evaluation.salary_assessment === 'ODPOVÍDÁ' ? 'Mzda odpovídá profilu' : evaluation.salary_assessment === 'POD_LIMITEM' ? 'Mzda je pod limitem profilu' : evaluation.salary_stated ? 'Mzda uvedena, srovnání nejisté' : 'Mzda neuvedena' : (detail?.offer.salary_raw || 'Mzda neuvedena');
 
   return <section className="mt-6" aria-label="Detail nabídky">
     <button type="button" className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-brand transition-colors hover:bg-surface-subtle" onClick={onClose}><ArrowLeft className="h-4 w-4" />Zpět na nabídky</button>
@@ -74,15 +75,18 @@ export default function OfferDetail({ profileId, offerId, onClose, onStateChange
 
       <div className="mt-6 rounded-2xl border border-border-subtle bg-white p-5 sm:p-6">
         {evaluation ? <>
-          <div className="flex flex-wrap items-center gap-3"><span className={'inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold ' + (verdict?.color || 'bg-surface-subtle text-brand')}>{detail.evaluationStale ? 'Hodnocení je zastaralé' : verdict?.label}</span><p className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{evaluation.score} / 100</p></div>
+          <div className="flex flex-wrap items-center gap-3"><p className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{detail.evaluationStale ? 'Hodnocení je zastaralé' : `${verdict?.label || 'Shoda s profilem'} · ${evaluation.score} / 100`}</p></div>
           <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-secondary">Skóre porovnává nabídku s tvým profilem. Pomáhá posoudit vhodnost práce; nevyjadřuje pravděpodobnost přijetí.</p>
+          <p className="mt-3 rounded-xl bg-surface-subtle px-4 py-3 text-sm"><span className="font-medium">{detail.offer.location || 'Lokalita neuvedena'}</span><span className="mx-2 text-ink-tertiary" aria-hidden="true">·</span><span>{salarySummary}{evaluation?.salary_min_czk != null ? ` · ${monthlySalary(evaluation.salary_min_czk) || ''}${evaluation.salary_max_czk != null ? ' až ' + monthlySalary(evaluation.salary_max_czk) : ''}` : ''}</span></p>
           {detail.evaluationStale && <p className="mt-4 rounded-xl bg-fit-potential-bg text-fit-potential-text p-3 text-sm leading-relaxed">Profil nebo nabídka se změnily. Nové hodnocení bude vycházet z aktuálních údajů.</p>}
         </> : <>
           <h2 className="font-display text-xl font-semibold">Zatím bez hodnocení shody</h2>
           <p className="mt-2 text-sm leading-relaxed text-ink-secondary">Porovnáme požadavky nabídky s tvým profilem a ukážeme, co stojí za pozornost.</p>
         </>}
-        {needsEvaluation && <div className="mt-5"><button type="button" disabled={busy || evaluating || !detail.offer.raw_description?.trim()} onClick={evaluate} className="button-primary min-h-11 w-full sm:w-auto">{evaluating || busy ? <><Loader2 className="h-4 w-4 animate-spin" />{evaluating ? 'Hodnocení připravujeme…' : 'Odesílám k hodnocení…'}</> : <><Sparkles className="h-4 w-4" />{evaluation ? 'Znovu vyhodnotit s AI' : 'Spustit AI evaluaci'}</>}</button>
-          <p className="mt-2 text-sm leading-relaxed text-ink-secondary">AI hodnocení může využívat placené API. {!detail.offer.raw_description?.trim() && 'Nejdřív doplň text inzerátu v části Další možnosti.'}</p></div>}
+        {needsEvaluation && <div className="mt-5">{!detail.offer.raw_description?.trim() ? <button type="button" onClick={()=>setEditingDescription(true)} className="button-primary min-h-11 w-full sm:w-auto">✍️ Doplnit text inzerátu pro AI evaluaci</button> : <button type="button" disabled={busy || evaluating} onClick={evaluate} className="button-primary min-h-11 w-full sm:w-auto">{evaluating || busy ? <><Loader2 className="h-4 w-4 animate-spin" />{evaluating ? 'Hodnocení připravujeme…' : 'Odesílám k hodnocení…'}</> : <><Sparkles className="h-4 w-4" />{evaluation ? 'Znovu vyhodnotit s AI' : 'Spustit AI evaluaci'}</>}</button>}
+          <p className="mt-2 text-sm leading-relaxed text-ink-secondary">AI hodnocení může využívat placené API.{!detail.offer.raw_description?.trim() && ' Vlož text nabídky, abychom ji mohli porovnat s tvým profilem.'}</p></div>}
+        {editingDescription && <OfferEditor profileId={profileId} offerId={offerId} initialDetail={detail} focusDescription onClose={()=>setEditingDescription(false)} onSaved={result=>{setDetail(previous=>({...previous,...result}));setEditingDescription(false);onChanged();}} />}
+        {evaluating && <p role="status" className="mt-4 flex items-start gap-2 rounded-xl bg-surface-subtle p-4 text-sm leading-relaxed text-ink-secondary"><Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-brand" aria-hidden="true" /><span>Analyzuji požadavky pozice a porovnávám s tvým profilem. Detail můžeš zavřít; hodnocení bude pokračovat na pozadí.</span></p>}
         {notice && <p role="status" className="mt-4 text-sm text-brand">{notice}</p>}
       </div>
 

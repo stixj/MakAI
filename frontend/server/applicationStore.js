@@ -42,7 +42,7 @@ export function validateApplication(input) {
     tasks: list(input.tasks, t => { if (typeof t.done !== 'boolean') throw new UserError('Neplatný stav úkolu.'); return { text: text(t.text,1000,true), due: date(t.due), done: t.done }; }),
     interviews: list(input.interviews, i => {
       if (typeof i.at !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(i.at) || !Number.isFinite(Date.parse(i.at)) || typeof i.cancelled !== 'boolean' || !Number.isInteger(i.duration) || i.duration < 5 || i.duration > 480) throw new UserError('Zkontroluj čas a délku pohovoru.');
-      return { at: new Date(i.at).toISOString(), duration: i.duration, place: text(i.place,1000), note: text(i.note,5000), cancelled: i.cancelled };
+      return { at: new Date(i.at).toISOString(), round: text(i.round ?? '',200), duration: i.duration, place: text(i.place,1000), note: text(i.note,5000), cancelled: i.cancelled };
     }) };
 }
 export async function assertActive(store, db, profileId) {

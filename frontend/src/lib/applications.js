@@ -11,7 +11,7 @@ export function applicationSummary(items, now = new Date()) {
 const escapeIcs = value => String(value || '').replace(/\\/g, '\\\\').replace(/\r\n|\r|\n/g, '\\n').replace(/[,;]/g, value => '\\' + value);
 export function interviewCalendar(interview, offer) {
   const stamp = value => new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MakAI//Interviews//CS','BEGIN:VEVENT', 'UID:' + escapeIcs(interview.id) + '@makai', 'DTSTAMP:' + stamp(new Date()), 'DTSTART:' + stamp(interview.at), 'DTEND:' + stamp(new Date(Date.parse(interview.at) + (interview.duration || 60) * 60000)), 'SUMMARY:' + escapeIcs('Pohovor: ' + offer.title + ' — ' + offer.company), 'LOCATION:' + escapeIcs(interview.place), 'DESCRIPTION:' + escapeIcs(interview.note), 'BEGIN:VALARM','TRIGGER:-PT30M','ACTION:DISPLAY','DESCRIPTION:Pohovor za 30 minut','END:VALARM','END:VEVENT','END:VCALENDAR'];
+  const lines = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//MakAI//Interviews//CS','BEGIN:VEVENT', 'UID:' + escapeIcs(interview.id) + '@makai', 'DTSTAMP:' + stamp(new Date()), 'DTSTART:' + stamp(interview.at), 'DTEND:' + stamp(new Date(Date.parse(interview.at) + (interview.duration || 60) * 60000)), 'SUMMARY:' + escapeIcs('Pohovor' + (interview.round ? ' · ' + interview.round : '') + ': ' + offer.title + ' — ' + offer.company), 'LOCATION:' + escapeIcs(interview.place), 'DESCRIPTION:' + escapeIcs(interview.note), 'BEGIN:VALARM','TRIGGER:-PT30M','ACTION:DISPLAY','DESCRIPTION:Pohovor za 30 minut','END:VALARM','END:VEVENT','END:VCALENDAR'];
   const folded = lines.flatMap(line => {
     const parts = []; let part = '', bytes = 0;
     for (const char of line) {
