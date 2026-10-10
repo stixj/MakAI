@@ -3,6 +3,7 @@ import { Search, UserRound, RefreshCw, Square, X } from 'lucide-react';
 import ProfileWizard from './ProfileWizard.jsx';
 import ProfileEditor from './ProfileEditor.jsx';
 import SchedulePanel, { displayTime } from './SchedulePanel.jsx';
+import SelectMenu from './SelectMenu.jsx';
 import { profileApi as api } from '../lib/profileApi.js';
 
 const money = amount => new Intl.NumberFormat('cs-CZ').format(amount);
@@ -181,12 +182,10 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
     </div>}
 
     {profile && <>
-      {cloud && profiles.length > 1 && <label className="mt-4 block text-sm">Aktivní profil
-        <select value={profile.id} disabled={busy || running || building} onChange={event => changeProfile({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) })} className="mt-2 w-full rounded-xl border border-border-subtle bg-surface px-3 py-3">
-          {profiles.map(item => <option key={item.id} value={item.id}>{item.name}{item.revision ? ' · verze ' + (item.revision + 1) : ''}</option>)}
-        </select>
+      {cloud && profiles.length > 1 && <div className="mt-4 text-sm"><span className="mb-2 block">Aktivní profil</span>
+        <SelectMenu value={profile.id} disabled={busy || running || building} ariaLabel="Aktivní profil" onChange={value=>changeProfile({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: value }) })} options={profiles.map(item=>({value:item.id,label:item.name+(item.revision?' · verze '+(item.revision+1):'')}))} />
         <span className="mt-1 block text-xs text-ink-secondary">Stejný výběr a historie na localhostu i online. Přepnutí profilu pozastaví automatiku.</span>
-      </label>}
+      </div>}
       <details className="mt-4 border-t border-border-subtle pt-3">
         <summary className="cursor-pointer py-1 text-sm font-medium text-brand">Profil a preference</summary>
         <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
@@ -206,10 +205,10 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
       {!cloud && <details className="mt-3">
         <summary className="cursor-pointer py-1 text-sm font-medium text-brand">Nastavení hledání</summary>
         <fieldset disabled={busy || running || building} className="mt-3 space-y-3 rounded-xl border border-border-subtle p-4">
-          <label className="block text-sm">Stáří inzerátů<select aria-label="Stáří inzerátů pro nové hledání" value={period} onChange={event => setPeriod(event.target.value)} className="ml-3 rounded-xl border border-border-subtle bg-surface px-3 py-2"><option value="all">Bez omezení stáří</option><option value="24h">Posledních 24 hodin</option><option value="7d">Posledních 7 dní</option><option value="30d">Posledních 30 dní</option></select></label>
+          <div className="block text-sm"><span className="mb-1 block">Stáří inzerátů</span><SelectMenu ariaLabel="Stáří inzerátů pro nové hledání" value={period} disabled={busy||running||building} onChange={setPeriod} options={[{value:'all',label:'Bez omezení stáří'},{value:'24h',label:'Posledních 24 hodin'},{value:'7d',label:'Posledních 7 dní'},{value:'30d',label:'Posledních 30 dní'}]} /></div>
           <p className="text-xs text-ink-secondary">Podle data zveřejnění na portálu, nikoli data hodnocení v MakAI.</p>
           {period !== 'all' && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={includeUnknownDates} onChange={event => setIncludeUnknownDates(event.target.checked)} className="mt-1" />Zahrnout i nabídky bez ověřitelného data zveřejnění</label>}
-          <label className="block text-sm">Nabídek na portál<select aria-label="Počet nabídek na portál" value={limit} onChange={event => setLimit(event.target.value)} className="ml-3 rounded-xl border border-border-subtle bg-surface px-3 py-2">{[5, 10, 15, 30].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+          <div className="block text-sm"><span className="mb-1 block">Nabídek na portál</span><SelectMenu ariaLabel="Počet nabídek na portál" value={limit} disabled={busy||running||building} onChange={setLimit} options={[5,10,15,30].map(value=>({value:String(value),label:String(value)}))} /></div>
         </fieldset>
       </details>}
       <p className="mt-3 text-xs leading-relaxed text-ink-secondary">{cloud ? 'Tvůj profil a výsledky jsou dostupné na všech připojených zařízeních. Automatické hledání může běžet i při zavřené aplikaci.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
