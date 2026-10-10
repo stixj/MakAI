@@ -1,6 +1,6 @@
 import {updateOffer,offerEdits,applyOfferEdit} from './offerEditing.js';
 import { UserError } from './cloudStore.js';
-import { applicationDetail, updateApplication, listApplications, manualRows, assertActive, offerRow, updateOfferInterest, deleteOffer } from './applicationStore.js';
+import { applicationDetail, updateApplication, listApplications, manualRows, assertActive, offerRow, updateOfferInterest, deleteOffer, deleteOffers } from './applicationStore.js';
 import { addOffer, previewOffer } from './externalOffer.js';
 import { profileTable } from './cloudProfile.js';
 import { readHistoryPage, historyView } from './historyQuery.js';
@@ -14,6 +14,7 @@ export async function opportunityRequest(store,method,url,body,{dispatch=async()
   if(method==='POST'){
     if(body?.action==='interest')return updateOfferInterest(store,body);
     if(body?.action==='delete')return deleteOffer(store,body);
+    if(body?.action==='deleteMany')return deleteOffers(store,body);
     if(body?.action==='translate')return translate(body);
     if(body?.action==='preview') {await assertActive(store,store.client,body.profileId);return preview(body.url);}
     if(body?.action==='import') {

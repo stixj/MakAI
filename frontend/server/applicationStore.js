@@ -138,17 +138,14 @@ export async function updateOfferInterest(store,input) {
   return store.transaction(async db=>{await assertActive(store,db,input.profileId);await offerRow(db,input.profileId,input.offerId);return writeOfferInterest(db,input.profileId,input.offerId,input);});
 }
 
-export async function deleteOffer(store,input) {
-  return store.transaction(async db=>{
-    await assertActive(store,db,input?.profileId);
-    const offerId=input?.offerId;
-    const row=await offerRow(db,input.profileId,offerId);
-    const table=profileTable(input.profileId);
+async function deleteOfferInTransaction(store,db,profileId,offerId) {
+    const row=await offerRow(db,profileId,offerId);
+    const table=profileTable(profileId);
 
     // A queued or running single-offer evaluation keeps a full copy of the
     // description in makai_runs.options. Remove that snapshot too, so a late
     // worker response cannot recreate data after the user deletes the offer.
-    const runs=(await db.execute({sql:'SELECT id,options FROM makai_runs WHERE profile_id=?',args:[input.profileId]})).rows;
+    const runs=(await db.execute({sql:'SELECT id,options FROM makai_runs WHERE profile_id=?',args:[profileId]})).rows;
     for(const run of runs){
       let options;
       try{options=JSON.parse(run.options);}catch{continue;}
@@ -157,10 +154,32 @@ export async function deleteOffer(store,input) {
 
     const tableExists=(await db.execute({sql:"SELECT name FROM sqlite_master WHERE type='table' AND name=?",args:[table]})).rows.length>0;
     if(tableExists)await db.execute({sql:'DELETE FROM '+table+' WHERE offer_id=?',args:[offerId]});
-    await db.execute({sql:'DELETE FROM makai_manual_offers WHERE profile_id=? AND offer_id=?',args:[input.profileId,offerId]});
+    await db.execute({sql:'DELETE FROM makai_manual_offers WHERE profile_id=? AND offer_id=?',args:[profileId,offerId]});
     for(const name of ['makai_job_states','makai_offer_interest','makai_offer_translations','makai_offer_evaluation_versions','makai_offer_edits','makai_applications','makai_application_events']){
-      await db.execute({sql:'DELETE FROM '+name+' WHERE profile_id=? AND offer_id=?',args:[input.profileId,offerId]});
+      await db.execute({sql:'DELETE FROM '+name+' WHERE profile_id=? AND offer_id=?',args:[profileId,offerId]});
     }
     return {deleted:true,offerId,manual:!!row.manual};
+}
+
+export async function deleteOffer(store,input) {
+  return store.transaction(async db=>{
+    await assertActive(store,db,input?.profileId);
+    return deleteOfferInTransaction(store,db,input.profileId,input?.offerId);
+  });
+}
+
+export async function deleteOffers(store,input) {
+  const { profileId, offerIds } = input || {};
+  if (!Array.isArray(offerIds) || offerIds.length < 1 || offerIds.length > 100 ||
+      offerIds.some(id => typeof id !== 'string' || !id.trim() || id.length > 500) ||
+      new Set(offerIds).size !== offerIds.length) throw new UserError('Vyber 1 až 100 různých nabídek.');
+  return store.transaction(async db=>{
+    await assertActive(store,db,profileId);
+    // Validate every row before removing any of them. The transaction keeps the
+    // selection atomic if one offer disappeared or the active profile changed.
+    for (const offerId of offerIds) await offerRow(db,profileId,offerId);
+    const deleted = [];
+    for (const offerId of offerIds) deleted.push(await deleteOfferInTransaction(store,db,profileId,offerId));
+    return { deleted: true, offerIds: deleted.map(item => item.offerId), count: deleted.length };
   });
 }

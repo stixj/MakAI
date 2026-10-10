@@ -2,7 +2,7 @@
 import { ArrowUpRight, Bookmark, Check, EyeOff, MapPin, ChevronRight, Star } from 'lucide-react';
 import { normalizeJobState } from '../lib/jobState.js';
 import { VERDICTS, safeOfferUrl } from '../lib/jobs.js';
-export default function JobCard({ job, onStateChange, actionsDisabled = false, onDetail }) {
+export default function JobCard({ job, onStateChange, actionsDisabled = false, onDetail, selectionMode = false, selected = false, onToggleSelect }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const { offer, evaluation } = job;
@@ -18,6 +18,10 @@ export default function JobCard({ job, onStateChange, actionsDisabled = false, o
   return <article className="job-card">
     <div className="flex flex-1 flex-col p-5 sm:p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        {selectionMode && <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl px-2 text-sm font-medium text-viatix-teal hover:bg-viatix-teal/5">
+          <input type="checkbox" checked={selected} onChange={() => onToggleSelect?.(job.id)} aria-label={'Vybrat nabídku ' + offer.title + ' — ' + offer.company} className="h-4 w-4 accent-viatix-teal" />
+          <span>Vybrat</span>
+        </label>}
         <span className={'inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium ' + (job.evaluationStale ? 'bg-viatix-line/40 text-muted-foreground' : badge?.color || 'bg-viatix-line/30 text-muted-foreground')}>
           {job.evaluationStale ? 'Hodnocení před změnou' : badge?.label || 'Zatím bez hodnocení'}
           {evaluation && !job.evaluationStale && <span className="opacity-70">{evaluation.score}/100</span>}

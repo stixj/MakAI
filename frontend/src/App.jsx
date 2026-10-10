@@ -2,7 +2,7 @@ import OfferDetail from './components/OfferDetail.jsx';
 import ApplicationsPanel from './components/ApplicationsPanel.jsx';
 import AddOfferPanel from './components/AddOfferPanel.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, Briefcase, RefreshCw, Search, X, Plus } from 'lucide-react';
+import { ArrowUpRight, Briefcase, RefreshCw, Search, X, Plus, Trash2, Loader2 } from 'lucide-react';
 import JobCard from './components/JobCard.jsx';
 import ProfilePanel from './components/ProfilePanel.jsx';
 import { normalizeJobState } from './lib/jobState.js';
@@ -12,6 +12,8 @@ import { VERDICTS, filterJobs, paginateJobs, pageNumbers } from './lib/jobs.js';
 import { hasJobSource, loadJobs, loadHistoryPage } from './lib/turso.js';
 
 function decodeRouteId(value) { try { return decodeURIComponent(value) || null; } catch { return null; } }
+function offerCountLabel(count) { return count === 1 ? 'nabídku' : count >= 2 && count <= 4 ? `${count} nabídky` : `${count} nabídek`; }
+function selectedCountLabel(count) { return count === 1 ? 'nabídka vybrána' : count >= 2 && count <= 4 ? 'nabídky vybrány' : 'nabídek vybráno'; }
 
 function EmptyState({ title, children, action }) {
   return <div className="rounded-3xl border border-viatix-line/60 bg-viatix-sand2 px-6 py-16 text-center">
@@ -32,6 +34,11 @@ export function Dashboard({ accountControls }) {
   const [section, setSection] = useState(initialRoute.startsWith('#/profil') ? 'profile' : initialRoute.startsWith('#/prihlasky') ? 'applications' : 'offers');
   const [offerDetail, setOfferDetail] = useState(initialRoute.startsWith('#/nabidky/') ? decodeRouteId(initialRoute.split('?')[0].slice('#/nabidky/'.length)) : null);
   const [adding, setAdding] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedOfferIds, setSelectedOfferIds] = useState(() => new Set());
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [selectedOffer, setSelectedOffer] = useState(initialRoute.startsWith('#/prihlasky/') ? decodeRouteId(initialRoute.split('?')[0].slice('#/prihlasky/'.length)) : null);
   const [lastAction, setLastAction] = useState(null);
   const [undoBusy, setUndoBusy] = useState(false);
@@ -63,7 +70,7 @@ export function Dashboard({ accountControls }) {
 
   const previousProfileId = useRef(null);
   useEffect(() => {
-    setNewOnly(false); if(previousProfileId.current) setPage(1); setLastAction(null); setActionError(''); setAdding(false); if (previousProfileId.current && previousProfileId.current !== profileId) { setSelectedOffer(null); setOfferDetail(null); }
+    setNewOnly(false); if(previousProfileId.current) setPage(1); setLastAction(null); setActionError(''); setAdding(false); setSelectionMode(false); setSelectedOfferIds(new Set()); setDeleteConfirm(false); if (previousProfileId.current && previousProfileId.current !== profileId) { setSelectedOffer(null); setOfferDetail(null); }
     previousProfileId.current = profileId;
     try { const value = localStorage.getItem('makai-last-visit:' + profileId); setPreviousVisit(value && Number.isFinite(Date.parse(value)) ? value : null); }
     catch { setPreviousVisit(null); }
@@ -135,8 +142,51 @@ export function Dashboard({ accountControls }) {
     finally { setUndoBusy(false); }
   }
 
+  function toggleSelectedOffer(id) {
+    if (!selectedOfferIds.has(id) && selectedOfferIds.size >= 100) {
+      setDeleteError('Najednou lze vybrat nejvýše 100 nabídek.');
+      return;
+    }
+    setSelectedOfferIds(previous => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    setDeleteError('');
+  }
+  function selectVisibleOffers() {
+    const allSelected = visible.length > 0 && visible.every(job => selectedOfferIds.has(job.id));
+    if (!allSelected && selectedOfferIds.size + visible.filter(job => !selectedOfferIds.has(job.id)).length > 100) {
+      setDeleteError('Výběr může obsahovat nejvýše 100 nabídek. Odeber některé položky a zkus to znovu.');
+      return;
+    }
+    setDeleteError('');
+    setSelectedOfferIds(previous => {
+      const next = new Set(previous);
+      for (const job of visible) allSelected ? next.delete(job.id) : next.add(job.id);
+      return next;
+    });
+  }
+  function leaveSelectionMode() {
+    setSelectionMode(false); setSelectedOfferIds(new Set()); setDeleteConfirm(false); setDeleteError('');
+  }
+  async function deleteSelectedOffers() {
+    const profile = profileId;
+    const offerIds = [...selectedOfferIds];
+    if (!profile || !offerIds.length) return;
+    setDeleteBusy(true); setDeleteError('');
+    try {
+      await profileApi('/api/applications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'deleteMany', profileId: profile, offerIds }) });
+      if (currentProfile.current !== profile) return;
+      setDeleteConfirm(false); leaveSelectionMode(); setLastAction(null); setReloadKey(value => value + 1);
+    } catch (failure) { setDeleteError(failure.message || 'Nabídky se nepodařilo smazat. Zkus to znovu.'); }
+    finally { setDeleteBusy(false); }
+  }
+
   function navigate(nextSection, id = null) {
     if(typeof window !== 'undefined' && section === 'offers' && !offerDetail) listScroll.current=window.scrollY;
+    if (selectionMode) leaveSelectionMode();
     setSection(nextSection); setAdding(false);
     setOfferDetail(nextSection === 'offers' ? id : null);
     setSelectedOffer(nextSection === 'applications' ? id : null);
@@ -232,7 +282,10 @@ export function Dashboard({ accountControls }) {
 
       {shared && !demo && !offerDetail && section !== 'profile' && <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
         {section === 'offers' ? <div aria-label="Filtry nabídek" className="flex flex-wrap gap-2">{[['active','Všechny nabídky'],['manual','Přidáno mnou'],['saved','Uložené'],['priority','★ Moje priority'],['hidden','Skryté']].map(([key,label]) => <button type="button" key={key} aria-pressed={collection === key} className={'filter-chip ' + (collection === key ? 'filter-chip-active' : '')} onClick={() => { changeFilter(setCollection,key); resetFilters(); }}>{label}</button>)}</div> : <p className="text-sm text-muted-foreground">Přehled reakcí, pohovorů a dalších kroků.</p>}
-        <button type="button" className="button-secondary px-3 sm:px-4" aria-label="Přidat nabídku" disabled={!profileId} onClick={() => setAdding(value => !value)}><Plus className="h-4 w-4 sm:hidden" aria-hidden="true" /><span className="hidden sm:inline">Přidat nabídku</span></button>
+        <div className="flex items-center gap-2">
+          {section === 'offers' && <button type="button" className="button-secondary px-3 sm:px-4" aria-label={selectionMode ? 'Zrušit výběr nabídek' : 'Vybrat nabídky ke smazání'} disabled={!profileId || !visible.length || loadingResults} onClick={() => selectionMode ? leaveSelectionMode() : (setSelectionMode(true), setSelectedOfferIds(new Set()))}><Trash2 className="h-4 w-4" aria-hidden="true" /><span>{selectionMode ? 'Ukončit výběr' : 'Smazat'}</span></button>}
+          <button type="button" className="button-secondary px-3 sm:px-4" aria-label="Přidat nabídku" disabled={!profileId} onClick={() => setAdding(value => !value)}><Plus className="h-4 w-4 sm:hidden" aria-hidden="true" /><span className="hidden sm:inline">Přidat nabídku</span></button>
+        </div>
       </div>}
       {adding && profileId && <AddOfferPanel key={profileId} profileId={profileId} onClose={() => setAdding(false)} onAdded={(result,applied) => { setAdding(false); setReloadKey(value => value + 1); if(applied) openApplication(result.offerId); else navigate('offers', result.offerId); }} onDuplicate={openDuplicate} />}
       {shared && !demo && section === 'applications' && profileId && <ApplicationsPanel profileId={profileId} reloadKey={reloadKey} selectedOffer={selectedOffer} onSelected={id => navigate('applications',id)} onChanged={() => setReloadKey(value => value + 1)} />}
@@ -258,16 +311,21 @@ export function Dashboard({ accountControls }) {
               <label className="block text-sm">Na stránce<select aria-label="Počet nabídek na stránce" value={pageSize} onChange={e => changeFilter(setPageSize,Number(e.target.value))} className="mt-2 w-full rounded-xl border border-viatix-line p-3">{[6,12,24,48].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
             </div></details>
           </div>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{view.total ? (view.page-1)*view.pageSize+1 : 0}–{Math.min(view.page*view.pageSize,view.total)} z {view.total} nabídek</p>{(search || verdict !== 'all' || historyPeriod !== 'all' || newOnly) && <button type="button" className="min-h-9 text-viatix-teal" onClick={resetFilters}>Zrušit filtry</button>}</div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"><p role="status">{view.total ? (view.page-1)*view.pageSize+1 : 0}–{Math.min(view.page*view.pageSize,view.total)} z {view.total} nabídek</p><div className="flex items-center gap-3">{selectionMode && <><span>{selectedOfferIds.size} vybráno</span><button type="button" className="min-h-9 text-viatix-teal" onClick={selectVisibleOffers}>{visible.length > 0 && visible.every(job => selectedOfferIds.has(job.id)) ? 'Odznačit stránku' : 'Vybrat stránku'}</button></>}{(search || verdict !== 'all' || historyPeriod !== 'all' || newOnly) && <button type="button" className="min-h-9 text-viatix-teal" onClick={resetFilters}>Zrušit filtry</button>}</div></div>
           {invalidCount > 0 && <p role="status" className="mb-4 rounded-xl bg-viatix-amber/15 p-3 text-xs">Počet přeskočených neplatných záznamů: {invalidCount}.</p>}
           {limitReached && <p className="mb-4 text-xs text-muted-foreground">Přímé připojení načítá posledních 500 hodnocení.</p>}
           {loadingResults && <p role="status" className="mb-3 text-xs text-viatix-teal">Načítám stránku nabídek…</p>}
 
-          {visible.length > 0 ? <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map(job => <JobCard key={profileId + ':' + job.id} job={job} onStateChange={shared && !demo && profileId ? changeJobState : undefined} actionsDisabled={undoBusy || loadingResults} onDetail={shared && !demo ? id => navigate('offers',id) : undefined} />)}</div> :
+          {visible.length > 0 ? <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map(job => <JobCard key={profileId + ':' + job.id} job={job} onStateChange={shared && !demo && profileId ? changeJobState : undefined} actionsDisabled={undoBusy || loadingResults || selectionMode} onDetail={shared && !demo ? id => navigate('offers',id) : undefined} selectionMode={selectionMode} selected={selectedOfferIds.has(job.id)} onToggleSelect={toggleSelectedOffer} />)}</div> :
             <EmptyState title={totalAll ? 'Žádná nabídka neodpovídá filtrům' : collection === 'manual' ? 'Zatím jsi nepřidal žádné nabídky' : collection === 'saved' ? 'Zatím nemáš uložené nabídky' : collection === 'applied' ? 'Zatím nemáš označené reakce' : collection === 'hidden' ? 'Zatím nemáš skryté nabídky' : totalStored ? 'Všechny nabídky jsou skryté' : 'První příležitost teprve přijde'} action={totalAll ? <button type="button" className="button-secondary" onClick={resetFilters}>Zrušit filtry</button> : totalStored && collection === 'active' ? <button type="button" className="button-secondary" onClick={() => changeFilter(setCollection, 'hidden')}>Prohlédnout skryté nabídky</button> : collection !== 'active' ? <button type="button" className="button-secondary" onClick={() => { changeFilter(setCollection, 'active'); resetFilters(); }}>Prohlédnout nabídky</button> : local ? <button type="button" className="button-primary" onClick={() => navigate('profile')}>Nastavit profil a najít nabídky</button> : null}>
               {totalAll ? 'Zkus jiný název pozice nebo zobraz všechna hodnocení.' : collection === 'manual' ? 'Nabídky z ručního importu se zobrazí právě tady.' : collection === 'saved' ? 'Zajímavou nabídku si odlož tlačítkem Uložit.' : collection === 'applied' ? 'Po odeslání přihlášky označ nabídku tlačítkem Reagoval jsem.' : collection === 'hidden' ? 'Skryté nabídky najdeš tady a můžeš je kdykoliv znovu zobrazit.' : totalStored ? 'Nabídky zůstávají uložené v sekci Skryté. Můžeš je kdykoliv vrátit.' : 'Vytvoř profil a spusť první hledání. Vyhodnocené nabídky se potom objeví tady.'}
             </EmptyState>}
           {view.pageCount > 1 && <div className="mt-6"><Pagination /></div>}
+          {selectionMode && selectedOfferIds.size > 0 && <div className="sticky bottom-3 z-20 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-viatix-line bg-viatix-sand2/95 p-3 shadow-card backdrop-blur sm:px-5">
+            <p className="text-sm"><strong>{selectedOfferIds.size}</strong> {selectedCountLabel(selectedOfferIds.size)}</p>
+            <button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-800 disabled:cursor-wait disabled:opacity-60" onClick={() => { setDeleteError(''); setDeleteConfirm(true); }} disabled={deleteBusy}><Trash2 className="h-4 w-4" aria-hidden="true" />Smazat vybrané</button>
+          </div>}
+          {selectionMode && deleteError && !deleteConfirm && <p role="alert" className="mt-3 text-sm text-red-700">{deleteError}</p>}
           {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
         </>}
 
@@ -279,6 +337,18 @@ export function Dashboard({ accountControls }) {
           <p>Zdroj nabídek zatím není připojený. Mezitím si můžeš prohlédnout vzhled karet na smyšlených datech.</p>
         </EmptyState>}
       </section>
+      {deleteConfirm && <div className="fixed inset-0 z-50 flex items-center justify-center bg-viatix-ink/45 p-4" onMouseDown={event => { if (event.target === event.currentTarget && !deleteBusy) setDeleteConfirm(false); }}>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="bulk-delete-title" aria-describedby="bulk-delete-description" className="w-full max-w-md rounded-3xl border border-viatix-line/70 bg-viatix-sand2 p-6 shadow-card sm:p-7">
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-100 text-red-700"><Trash2 className="h-5 w-5" aria-hidden="true" /></div>
+          <h2 id="bulk-delete-title" className="font-display text-xl font-semibold">Smazat {offerCountLabel(selectedOfferIds.size)} natrvalo?</h2>
+          <p id="bulk-delete-description" className="mt-3 text-sm leading-relaxed text-muted-foreground">Odstraní se také AI hodnocení, poznámky, historie reakcí a uložený text. Tuto akci nelze vrátit.</p>
+          {deleteError && <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{deleteError}</p>}
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button type="button" className="button-secondary" disabled={deleteBusy} onClick={() => setDeleteConfirm(false)}>Zrušit</button>
+            <button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-sm font-semibold text-white transition-colors hover:bg-red-800 disabled:cursor-wait disabled:opacity-60" disabled={deleteBusy} onClick={deleteSelectedOffers}>{deleteBusy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}{deleteBusy ? 'Mažu nabídky…' : 'Smazat natrvalo'}</button>
+          </div>
+        </section>
+      </div>}
       </>}
       <footer className="mt-10 flex flex-col justify-between gap-3 border-t border-viatix-line/60 pt-5 text-xs leading-relaxed text-muted-foreground sm:flex-row">
         <span>MakAI · Další krok s lepším přehledem.</span>
