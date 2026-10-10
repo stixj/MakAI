@@ -84,6 +84,7 @@ class MakAIState(TypedDict):
     evaluations: dict[str, JobFitEvaluation]
     errors: list[str]
     skipped_duplicates: NotRequired[list[str]]
+    skipped_by_prefilter: NotRequired[list[JobOffer]]
     saved_ids: NotRequired[list[str]]
     enriched_ids: NotRequired[list[str]]
     evaluation_blocked: NotRequired[dict | None]
@@ -98,6 +99,7 @@ class MakAIStateUpdate(TypedDict, total=False):
     evaluations: dict[str, JobFitEvaluation]
     errors: list[str]
     skipped_duplicates: list[str]
+    skipped_by_prefilter: list[JobOffer]
     saved_ids: list[str]
     enriched_ids: list[str]
     evaluation_blocked: dict | None

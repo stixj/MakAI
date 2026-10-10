@@ -1,11 +1,14 @@
 """Serial ingestion followed by one-offer evaluation/persistence steps."""
 
 from collections.abc import Callable
+import logging
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import ValidationError
 
+from .hunt_filters import filter_promising_offers
+from .profile import CandidateProfile, MASTER_PROFILE
 from .config import Settings, get_settings
 from .evaluator import EvaluationError, evaluate_job, validate_evaluation
 from .schemas import JobFitEvaluation, JobOffer, MakAIState, MakAIStateUpdate
@@ -14,6 +17,7 @@ from .turso import TursoEvaluationStore
 from .utils.sources import enrich_offer
 
 JobEvaluator = Callable[[JobOffer], JobFitEvaluation]
+logger = logging.getLogger(__name__)
 
 
 def ingest(state: MakAIState) -> MakAIStateUpdate:
@@ -27,10 +31,10 @@ def ingest(state: MakAIState) -> MakAIStateUpdate:
     # Every invocation is a fresh batch; stale evaluations must not survive.
     return {"offers": offers, "evaluations": {}, "errors": errors,
             "skipped_duplicates": [], "saved_ids": [], "enriched_ids": [], "evaluation_blocked": None,
-            "evaluation_index": 0, "evaluation_limit_reached": False}
+            "skipped_by_prefilter": [], "evaluation_index": 0, "evaluation_limit_reached": False}
 
 
-def filter_offers(state: MakAIState) -> MakAIStateUpdate:
+def filter_offers(state: MakAIState, profile: CandidateProfile = MASTER_PROFILE) -> MakAIStateUpdate:
     seen: set[str] = set()
     offers: list[JobOffer] = []
     errors = list(state["errors"])
@@ -40,8 +44,10 @@ def filter_offers(state: MakAIState) -> MakAIStateUpdate:
             continue
         seen.add(offer.id)
         offers.append(offer)
-    # Semantic no-go decisions belong to the evaluator, not keyword guesses.
-    return {"offers": offers, "errors": errors}
+    promising, rejected = filter_promising_offers(offers, profile)
+    if rejected:
+        logger.info("Předfiltr vyřadil %d nabídek podle lokality nebo názvu pozice.", len(rejected))
+    return {"offers": promising, "errors": errors, "skipped_by_prefilter": rejected}
 
 
 def build_graph(
@@ -50,9 +56,11 @@ def build_graph(
     settings: Settings | None = None,
     duplicate_checker: Callable[[str], bool] | None = None,
     max_evaluations: int | None = None,
+    profile: CandidateProfile | None = None,
 ) -> CompiledStateGraph[MakAIState, None, MakAIState, MakAIState]:
     """Inject adapters for offline tests without changing the production graph."""
     active_store = store if store is not None else create_store(settings or get_settings())
+    active_profile = profile or MASTER_PROFILE
     check_duplicate = duplicate_checker
     if max_evaluations is not None and (type(max_evaluations) is not int or not 1 <= max_evaluations <= 100):
         raise ValueError("Limit AI hodnocení musí být 1–100.")
@@ -143,7 +151,7 @@ def build_graph(
 
     builder = StateGraph(MakAIState)
     builder.add_node("ingest", ingest)
-    builder.add_node("filter", filter_offers)
+    builder.add_node("filter", lambda state: filter_offers(state, active_profile))
     builder.add_node("deduplicate", deduplicate)
     builder.add_node("evaluate", evaluate)
     builder.add_node("save", save)

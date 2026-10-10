@@ -14,7 +14,7 @@ export function historyQuery(url) {
   const search = params.get('search') ?? '';
   const since = params.get('since');
   const collection = params.get('collection') ?? 'active';
-  if (!['active', 'saved', 'priority', 'applied', 'hidden', 'all'].includes(collection) || !Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
+  if (!['active', 'saved', 'priority', 'applied', 'hidden', 'manual', 'all'].includes(collection) || !Number.isSafeInteger(page) || page < 1 || !PAGE_SIZES.includes(pageSize) ||
       !['all', ...Object.keys(VERDICTS)].includes(verdict) || !['score', 'newest', 'priority'].includes(sort) ||
       !['all', '24h', '7d', '30d'].includes(historyPeriod) || search.length > 200 ||
       (since !== null && (!/^\d{4}-\d{2}-\d{2}T/.test(since) || !Number.isFinite(Date.parse(since))))) {
@@ -27,9 +27,9 @@ export function historyView(metadata, query) {
   const jobs = metadata.filter(row => typeof row.title === 'string' && typeof row.company === 'string' &&
     (row.manual === true && row.verdict == null || VERDICTS[row.verdict] && Number.isFinite(Number(row.score)))).map(row => ({
     id: row.offer_id, state: normalizeJobState(row.state), offer: { title: row.title, company: row.company },
-    evaluation: row.verdict ? { verdict: row.verdict, score: Number(row.score) } : null, evaluatedAt: row.evaluated_at,
+    evaluation: row.verdict ? { verdict: row.verdict, score: Number(row.score) } : null, evaluatedAt: row.evaluated_at, manual: row.manual === true,
   }));
-  const collectionJobs = jobs.filter(job => inCollection(job.state, query.collection));
+  const collectionJobs = jobs.filter(job => query.collection === 'manual' ? job.manual : inCollection(job.state, query.collection));
   const base = filterJobs(collectionJobs, { ...query, verdict: 'all' }).filter(job =>
     !query.since || job.evaluatedAt && Date.parse(job.evaluatedAt.includes('T') ? job.evaluatedAt : job.evaluatedAt.replace(' ', 'T') + 'Z') > Date.parse(query.since));
   const counts = Object.fromEntries(Object.keys(VERDICTS).map(key => [key, base.filter(job => job.evaluation?.verdict === key).length]));

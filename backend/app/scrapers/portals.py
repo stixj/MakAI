@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from pydantic import HttpUrl
 
 from ..schemas import RawJobOffer
-from .base import BaseScraper, ScraperError, validate_limit
+from .base import BaseScraper, ScraperError, request_with_backoff, validate_limit
 from .structured import clean_url, parse_job_detail, posting_to_offer, source_date
 
 logger = logging.getLogger(__name__)
@@ -41,11 +41,11 @@ class HtmlJobScraper(BaseScraper):
         except ValueError:
             return False
 
-    def _get(self, client: httpx.Client, url: str) -> httpx.Response:
+    def _get(self, client: httpx.Client, url: str, *, detail: bool = False) -> httpx.Response:
         for _ in range(6):
             if not self._allowed(url):
                 raise ScraperError(f"{self.portal}: neočekávaná cílová adresa.")
-            response = client.get(url)
+            response = request_with_backoff(client, url, detail=detail)
             if response.is_redirect:
                 target = response.headers.get("location")
                 if not target:
@@ -103,7 +103,7 @@ class HtmlJobScraper(BaseScraper):
                                 self.stats["knownUrls"] += 1
                                 continue
                             checked += 1
-                            response = self._get(client, url)
+                            response = self._get(client, url, detail=True)
                             if response.status_code in {404, 410}:
                                 continue
                             response.raise_for_status()

@@ -8,7 +8,7 @@ import { readBody, dispatchWorker } from './cloudApi.js';
 import { historyQuery, historyView, readHistoryPage } from './historyQuery.js';
 import { migrateLocalData } from './sharedMigration.js';
 
-export function sharedLocalMiddleware(root, env, { clientFactory = createClient, migrate = migrateLocalData, fetcher = fetch } = {}) {
+export function sharedLocalMiddleware(root, env, { clientFactory = createClient, migrate = migrateLocalData, fetcher = fetch, preview } = {}) {
   let client, ready;
   async function storage() {
     if (!env.DATABASE_URL || !env.TURSO_AUTH_TOKEN) throw new UserError('Chybí společné Turso v kořenovém .env. Nastav stejnou databázi jako na Vercelu.', 503);
@@ -30,7 +30,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
     if (!localRequest(request)) return send(403, { error: 'Přístup je povolen pouze z localhostu.' });
     try {
       const store = await storage();
-      if (route === '/api/applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher), translate: payload => translateOffer(store,payload,env,fetcher) }));
+      if (route === '/api/applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher), translate: payload => translateOffer(store,payload,env,fetcher), ...(preview ? { preview } : {}) }));
       if (route === '/api/profile') {
         if (request.method === 'GET') return send(200, new URL(request.url, 'http://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
         if (request.method === 'POST') return send(200, await store.saveProfile(await readBody(request)));

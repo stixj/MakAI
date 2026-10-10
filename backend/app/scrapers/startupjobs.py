@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
 from ..schemas import RawJobOffer
-from .base import BaseScraper, ScraperError, validate_limit
+from .base import BaseScraper, ScraperError, request_with_backoff, validate_limit
 from .structured import job_postings as _job_postings, posting_to_offer
 
 SEARCH_URL = "https://back.startupjobs.cz/api/search-offers"
@@ -106,7 +106,7 @@ def fetch_startupjobs(limit: int = 15, *, searches: tuple[dict, ...] | None = No
                     url = f"{BASE_URL}/nabidka/{source_id}/{slug}"
                     if url in skip_urls:
                         continue
-                    detail = client.get(url)
+                    detail = request_with_backoff(client, url, detail=True)
                     if detail.status_code in {404, 410}:
                         continue
                     detail.raise_for_status()

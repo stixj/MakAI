@@ -51,6 +51,7 @@ class CandidateProfile(BaseModel):
     working_style: tuple[str, ...]
     preferences: tuple[str, ...]
     no_go_criteria: tuple[str, ...]
+    no_go_keywords: tuple[str, ...] = ()
     location_preferences: tuple[str, ...]
     language_preferences: tuple[str, ...]
     salary: SalaryPreferences

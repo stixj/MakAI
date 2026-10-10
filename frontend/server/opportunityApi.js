@@ -1,6 +1,6 @@
 import {updateOffer,offerEdits,applyOfferEdit} from './offerEditing.js';
 import { UserError } from './cloudStore.js';
-import { applicationDetail, updateApplication, listApplications, manualRows, assertActive, offerRow, updateOfferInterest } from './applicationStore.js';
+import { applicationDetail, updateApplication, listApplications, manualRows, assertActive, offerRow, updateOfferInterest, deleteOffer } from './applicationStore.js';
 import { addOffer, previewOffer } from './externalOffer.js';
 import { profileTable } from './cloudProfile.js';
 import { readHistoryPage, historyView } from './historyQuery.js';
@@ -13,8 +13,16 @@ export async function opportunityRequest(store,method,url,body,{dispatch=async()
   if(method==='PATCH')return updateApplication(store,body);
   if(method==='POST'){
     if(body?.action==='interest')return updateOfferInterest(store,body);
+    if(body?.action==='delete')return deleteOffer(store,body);
     if(body?.action==='translate')return translate(body);
     if(body?.action==='preview') {await assertActive(store,store.client,body.profileId);return preview(body.url);}
+    if(body?.action==='import') {
+      await assertActive(store,store.client,body.profileId);
+      const imported=await preview(body.url), offer=imported.offer;
+      if(!offer?.title?.trim()||!offer?.company?.trim()||!offer?.raw_description?.trim())return {...imported,saved:false};
+      const saved=await addOffer(store,{profileId:body.profileId,offer,applied:false,appliedAt:null});
+      return {...saved,saved:!saved.duplicate,notice:imported.notice};
+    }
     if(body?.action==='add')return addOffer(store,body);
     if(body?.action==='editOffer')return updateOffer(store,body);
     if(body?.action==='description'){

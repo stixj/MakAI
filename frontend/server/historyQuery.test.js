@@ -42,3 +42,16 @@ test('last-visit filter keeps only newer evaluations across the entire history',
    assert.throws(() => historyQuery('/api/jobs?view=paged&since=bad'));
  } finally { db.close(); }
 });
+
+test('manual collection returns saved user offers without requiring an evaluation',async()=>{
+ const db=new DatabaseSync(':memory:');
+ db.exec('CREATE TABLE makai_job_evaluations (offer_id TEXT PRIMARY KEY, offer TEXT, evaluation TEXT, evaluated_at TEXT)');
+ const client={execute:async stmt=>({rows:db.prepare(stmt.sql).all(...(stmt.args||[]))})};
+ const offer={id:'manual-1',title:'Process analyst',company:'Notino',location:'Rajhrad',url:'https://notino.jobs.cz/job',raw_description:'Full listing'};
+ try {
+   const query=historyQuery('/api/jobs?view=paged&collection=manual');
+   const page=await readHistoryPage(client,query,[],[{offer_id:'manual-1',offer:JSON.stringify(offer),evaluation:null,evaluated_at:null,created_at:'2026-10-10 10:00:00',manual:true}]);
+   assert.equal(page.total,1);assert.equal(page.totalAll,1);assert.equal(page.rows[0].offer_id,'manual-1');
+   assert.throws(()=>historyQuery('/api/jobs?view=paged&collection=unknown'));
+ } finally { db.close(); }
+});

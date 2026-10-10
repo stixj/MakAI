@@ -6,7 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import httpx
-from backend.app.hunt_filters import HuntSelection
+from backend.app.hunt_filters import HuntSelection, filter_promising_offers
+from backend.app.profile import MASTER_PROFILE
 from backend.app.scrapers.portals import PraceCzScraper
 from backend.app.demo import sample_offers, demo_evaluate_job
 from backend.app.storage import JsonEvaluationStore
@@ -19,6 +20,23 @@ class SelectionTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 10, 9, 12, tzinfo=UTC)
         self.offer = sample_offers()[0]
+
+    def _raw_offer(self, title, location):
+        return self.offer.model_copy(update={"title": title, "location": location})
+
+    def test_deterministic_prefilter_keeps_brno_remote_and_junior_senior_roles(self):
+        offers = [self._raw_offer("Python Developer (Junior)", "Brno"),
+                  self._raw_offer("Python Developer (Senior)", "Remote")]
+        accepted, rejected = filter_promising_offers(offers, MASTER_PROFILE)
+        self.assertEqual(accepted, offers)
+        self.assertEqual(rejected, [])
+
+    def test_deterministic_prefilter_drops_other_city_without_remote_and_no_go_title(self):
+        ostrava = self._raw_offer("Python Developer", "Ostrava")
+        welder = self._raw_offer("Svářeč CO2", "Brno")
+        accepted, rejected = filter_promising_offers([ostrava, welder], MASTER_PROFILE)
+        self.assertEqual(accepted, [])
+        self.assertEqual(rejected, [ostrava, welder])
 
     def test_rolling_windows_include_boundary_and_exclude_older_or_future(self):
         for period, hours in (("24h", 24), ("7d", 168), ("30d", 720)):

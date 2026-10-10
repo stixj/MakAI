@@ -42,8 +42,19 @@ class GraphTests(unittest.TestCase):
     def test_filter_returns_only_modified_channels(self):
         state = initial_state()
         update = filter_offers(state)
-        self.assertEqual(set(update), {"offers", "errors"})
+        self.assertEqual(set(update), {"offers", "errors", "skipped_by_prefilter"})
         self.assertEqual(state, initial_state())
+
+    def test_prefiltered_offers_are_recorded_and_never_evaluated(self):
+        base = sample_offers()[0]
+        rejected = base.model_copy(update={"id": "welder", "title": "Svářeč CO2",
+                                           "url": "https://example.com/welder", "canonical_id": ""})
+        calls = []
+        result = build_graph(store=RecordingStore(), evaluator=lambda offer: calls.append(offer.id)
+                             or demo_evaluate_job(base)).invoke(initial_state([rejected]))
+        self.assertEqual(calls, [])
+        self.assertEqual(result["offers"], [])
+        self.assertEqual(result["skipped_by_prefilter"], [rejected])
 
     def test_state_is_updated_and_saved_before_next_offer(self):
         offers = sample_offers()

@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             except ScraperError as exc:
                 source_errors.append(str(exc))
         console.print(f"Nalezeno: {len(offers)} nabídek.")
-        result = build_graph(settings=settings, store=store).invoke(
+        result = build_graph(settings=settings, store=store, profile=profile).invoke(
             {"offers": offers, "evaluations": {}, "errors": source_errors}
         )
     except (StorageConfigurationError, ScraperError) as exc:
