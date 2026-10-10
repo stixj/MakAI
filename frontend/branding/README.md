@@ -7,6 +7,11 @@ Assets derived using the built-in `image_gen` tool with transparent backgrounds:
 - `../public/brand/makai-logo-v1.png`: horizontal emblem and wordmark, used in the header.
 - `../public/brand/makai-icon-v1.png`: circular emblem, used as favicon.
 
+Current frontend assets use the scalable vector exports in `../public/brand`:
+
+- `01_MakAI_logo_original_V0.svg`: horizontal logo and wordmark in the app header and sign-in screen.
+- `02_MakAI_symbol_V0.svg`: circular M and dot mark for the SVG favicon. The 64 px PNG remains as a browser fallback.
+
 These are generated extractions from the supplied presentation, not original vector exports. The supplied source remains unchanged.
 
 ## Prompts

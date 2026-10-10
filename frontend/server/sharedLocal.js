@@ -5,6 +5,7 @@ import { CloudStore, UserError } from './cloudStore.js';
 import { profileTable } from './cloudProfile.js';
 import { localRequest } from './localJobs.js';
 import { readBody, dispatchWorker } from './cloudApi.js';
+import { extractCv } from './profileBuilder.js';
 import { historyQuery, historyView, readHistoryPage } from './historyQuery.js';
 import { migrateLocalData } from './sharedMigration.js';
 
@@ -21,7 +22,7 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
     })().catch(error => { ready = null; throw error; });
     return ready;
   }
-  const routes = new Set(['/api/profile', '/api/jobs', '/api/schedule', '/api/hunt', '/api/applications']);
+  const routes = new Set(['/api/profile', '/api/profile/document', '/api/documents', '/api/jobs', '/api/schedule', '/api/hunt', '/api/applications']);
   const middleware = async (request, response, next) => {
     const route = request.url?.split('?')[0];
     if (!routes.has(route)) return next();
@@ -31,9 +32,37 @@ export function sharedLocalMiddleware(root, env, { clientFactory = createClient,
     try {
       const store = await storage();
       if (route === '/api/applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher), translate: payload => translateOffer(store,payload,env,fetcher), ...(preview ? { preview } : {}) }));
+      if (route === '/api/documents') {
+        const url=new URL(request.url,'http://localhost'), profileId=url.searchParams.get('profileId')||undefined, id=url.searchParams.get('id');
+        if(request.method==='GET')return send(200,id?(url.searchParams.get('snapshot')==='1'?await store.getApplicationDocument(profileId,url.searchParams.get('offerId'),id):await store.getDocument(id,profileId,url.searchParams.get('download')==='1')):await store.listDocuments(profileId));
+        if(request.method==='POST'){
+          const payload=await readBody(request,3000000);
+          if(payload.action==='assign-cv-to-applications')return send(200,await store.documentsForAllApplications(payload.documentId));
+          if(payload.kind==='cv')payload.extractedText=await extractCv(payload);
+          return send(200,await store.saveDocument(payload));
+        }
+        if(request.method==='DELETE')return send(200,await store.deleteDocument(id,profileId));
+        return send(405,{error:'Dokument můžeš zobrazit, přidat nebo smazat.'});
+      }
+      if (route === '/api/profile/document') {
+        const documentUrl = new URL(request.url, 'http://localhost');
+        const profileId = documentUrl.searchParams.get('profileId') || undefined;
+        if (request.method === 'GET') return send(200, await store.currentProfileDocument({ download: documentUrl.searchParams.get('download') === '1', profileId }));
+        if (request.method === 'POST') {
+          const payload = await readBody(request, 3000000);
+          payload.extractedText = await extractCv(payload);
+          return send(200, await store.saveCurrentProfileDocument(payload));
+        }
+        if (request.method === 'DELETE') return send(200, await store.deleteCurrentProfileDocument(profileId));
+        return send(405, { error: 'CV můžeš načíst, nahradit nebo smazat.' });
+      }
       if (route === '/api/profile') {
-        if (request.method === 'GET') return send(200, new URL(request.url, 'http://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
-        if (request.method === 'POST') return send(200, await store.saveProfile(await readBody(request)));
+        if (request.method === 'GET') return send(200, new URL(request.url, 'http://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profileView());
+        if (request.method === 'POST') {
+          const payload = await readBody(request, 3000000);
+          if (payload.cvDocument) payload.cvDocument.extractedText = await extractCv(payload.cvDocument);
+          return send(200, await store.saveProfile(payload));
+        }
         if (request.method === 'PUT') return send(200, await store.activateProfile((await readBody(request)).id));
       }
       if (route === '/api/schedule') {

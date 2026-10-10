@@ -91,12 +91,14 @@ Zdroje: [Vite environment variables](https://vite.dev/guide/env-and-mode),
 
 - Root Directory: `frontend`
 - Framework Preset: Vite
-- Build Command: `npm run build`
-- Output Directory: `dist`
-- Přidej obě `VITE_TURSO_*` proměnné do zvolených prostředí před buildem.
+- Build Command: `npm run build:cloud`
+- Output Directory: `dist-cloud`
+- Nastav serverové proměnné Turso a AI podle [online návodu](../docs/online-setup.md).
 
-`vercel.json` uvádí stejná nastavení. Aplikace používá jedinou stránku bez routeru,
-takže není potřeba přesměrování ani Python runtime.
+Toto nastavení odpovídá `vercel.json`. Cloud build zahrnuje Node API v `api/`;
+citlivé databázové a AI klíče patří pouze do serverového prostředí Vercelu.
+Produkční build publikovaný na Vercelu je plná online aplikace, nikoli statická
+ukázka s veřejným read-only tokenem.
 [Nasazení Vite na Vercel](https://vite.dev/guide/static-deploy.html#vercel).
 
 ## Data a ověření
@@ -140,7 +142,9 @@ Ve **Správě profilu** lze upravit aktuální profil nebo vytvořit nový pomoc
 Vyber životopis (čitelné PDF, DOCX, TXT/Markdown do 2 MB) nebo krátký dotazník.
 AI předvyplní doložené zkušenosti a dovednosti; doplníš požadovanou práci,
 lokalitu, mzdu a případné doplňující otázky. Návrh zkontroluješ a upravíš před
-aktivací. Soubor CV se neukládá a generování nemění aktivní profil.
+aktivací. Původní soubor při tvorbě profilu slouží k načtení údajů; uložený profil
+ho sám o sobě neobsahuje. Životopis a motivační dopisy lze spravovat samostatně
+v knihovně **Dokumenty**.
 Stejný průvodce je dostupný i na Vercelu. PDF bez čitelného textu vyžaduje textovou
 verzi nebo dotazník. Původní import profilových JSON/Markdown šablon byl z UI odstraněn.
 
@@ -184,7 +188,7 @@ Při vyčerpané denní kvótě API, chybě přístupu nebo nedostupnosti poskyt
 
 ## Úpravy UX — říjen 2026
 
-Rozhraní má sekce Nabídky, Moje přihlášky a Profil a hledání. Stručná karta
+Rozhraní má sekce Nabídky, Moje přihlášky, Dokumenty a Profil a hledání. Stručná karta
 otevře jednotný detail, který má vlastní hash URL. Filtry a stránka se uchovají
 v URL; návrat z detailu obnoví pozici seznamu.
 
@@ -209,6 +213,16 @@ Moje priorita je samostatné označení nabídky uživatelem; nemění AI skóre
 
 Překlad je dostupný v Celý inzerát a Původní nabídka. POST `/api/applications` s `action: translate` překládá pouze uložený text nabídky přes stávající serverovou AI konfiguraci. Výsledek se ukládá podle hashe textu; upravený text vyžaduje nový překlad. Originál se nepřepisuje. Limit: 20 000 znaků vstupu, 30 nových generování denně pro aplikaci, timeout 120 s. Zámek omezuje souběžné generování stejného překladu. AI transport je testován simulovanými odpověďmi; živé placené volání nebylo součástí automatické kontroly.
 
-Volitelné údaje přihlášky evidují podklady (názvy a verze souborů, žádný upload), způsob reakce, uzávěrku, slíbenou odpověď, kolo řízení, zadání a jeho odevzdání, otázky, nabídnuté podmínky a výsledek. Termíny odpovědi a zadání ovlivňují další kroky; automatické zprávy firmám se neodesílají. Rozbalovací porovnání zobrazuje přihlášky ve stavech nabídka spolupráce / přijato.
+Knihovna **Dokumenty** ukládá PDF, DOCX, TXT a Markdown životopisy i textové
+motivační dopisy. U přihlášky lze vybrat odeslané podklady; aplikace uloží jejich
+kopii, aby historie zůstala správná i po úpravě nebo smazání dokumentu z knihovny.
+Stávající CV lze jedním krokem přiřadit ke všem evidovaným přihláškám. Volitelné
+údaje přihlášky dále evidují způsob reakce, uzávěrku, slíbenou odpověď, kolo
+řízení, zadání a jeho odevzdání, otázky, nabídnuté podmínky a výsledek. Termíny
+odpovědi a zadání ovlivňují další kroky; automatické zprávy firmám se neodesílají.
+Rozbalovací porovnání zobrazuje přihlášky ve stavech nabídka spolupráce / přijato.
 
-Nové tabulky jsou aditivní (`makai_offer_interest`, `makai_offer_translations`). Před společným používáním těchto funkcí je potřeba nasadit nové online API; starší nasazené API doplňující pole přihlášek ještě nezná.
+Nové tabulky jsou aditivní (`makai_offer_interest`, `makai_offer_translations`,
+`makai_documents` a `makai_application_documents`). Před společným používáním
+těchto funkcí je potřeba nasadit nové online API; starší nasazené API doplňující
+pole přihlášek a knihovnu dokumentů ještě nezná.

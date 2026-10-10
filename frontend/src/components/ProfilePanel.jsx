@@ -7,7 +7,7 @@ import { profileApi as api } from '../lib/profileApi.js';
 
 const money = amount => new Intl.NumberFormat('cs-CZ').format(amount);
 
-export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact = false, onManage, onFirstSearch }) {
+export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact = false, onManage, onManageDocuments, onFirstSearch }) {
   const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
   const [profile, setProfile] = useState(null);
   const [busy, setBusy] = useState(true);
@@ -113,19 +113,19 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
     anchor.click(); URL.revokeObjectURL(url);
   }
 
-  if (compact && profile) return <section aria-label="Aktivní profil a hledání" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-viatix-teal/5 px-4 py-3">
-    <button type="button" onClick={onManage} className="min-h-11 min-w-0 flex-1 text-left"><span className="block text-xs text-muted-foreground">Hledáme podle profilu</span><span className="block truncate text-sm font-semibold text-viatix-teal">{profile.name}</span></button>
-    <div className="flex flex-wrap items-center gap-2"><button type="button" className="button-primary px-3 sm:px-5" aria-label="Hledat nové nabídky" disabled={busy || running || building || scheduleDirty} onClick={() => startHunt()}><Search className="h-4 w-4" /><span className="sm:hidden">{running ? 'Hledám…' : 'Hledat'}</span><span className="hidden sm:inline">{running ? hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…' : 'Hledat nové nabídky'}</span></button>{running && <button type="button" className="button-secondary" disabled={stopping || hunt.status === 'stopping'} onClick={stopHunt}>Zastavit</button>}</div>
-    {running && <p role="status" className="w-full text-xs text-muted-foreground">{cloud ? 'Stránku můžeš zavřít. Výsledky se uloží do přehledu.' : 'Hledání běží na tomto počítači.'}</p>}
-    {scheduleDirty && <p className="w-full text-xs text-amber-800">Nejdřív ulož změny v sekci Profil a hledání.</p>}
-    {(error || hunt.error) && <p role="alert" className="w-full text-sm text-red-700">{error || hunt.error}</p>}
-    {hunt.status === 'blocked' && <p role="alert" className="w-full text-sm text-amber-800">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení se zastavilo. Podrobnosti najdeš v Profil a hledání.'}</p>}
-    {['done','partial'].includes(hunt.status) && hunt.result && <p role="status" className="w-full text-xs text-muted-foreground">{hunt.status === 'partial' ? 'Hledání částečně dokončeno' : 'Hledání dokončeno'} · uloženo {hunt.result.saved} nabídek</p>}
+  if (compact && profile) return <section aria-label="Aktivní profil a hledání" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-subtle px-4 py-3">
+    <button type="button" onClick={onManage} className="min-h-11 min-w-0 flex-1 text-left"><span className="block text-xs text-ink-secondary">Hledáme podle profilu</span><span className="block truncate text-sm font-semibold text-brand">{profile.name}</span></button>
+    <div className="mr-[-1rem] flex flex-wrap items-center gap-2"><button type="button" className="button-primary px-3 sm:px-5" aria-label="Hledat nové nabídky" disabled={busy || running || building || scheduleDirty} onClick={() => startHunt()}><Search className="h-4 w-4" /><span className="sm:hidden">{running ? 'Hledám…' : 'Hledat'}</span><span className="hidden sm:inline">{running ? hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…' : 'Hledat nové nabídky'}</span></button>{running && <button type="button" className="button-secondary" disabled={stopping || hunt.status === 'stopping'} onClick={stopHunt}>Zastavit</button>}</div>
+    {running && <p role="status" className="w-full text-xs text-ink-secondary">{cloud ? 'Stránku můžeš zavřít. Výsledky se uloží do přehledu.' : 'Hledání běží na tomto počítači.'}</p>}
+    {scheduleDirty && <p className="w-full text-xs text-fit-potential-text">Nejdřív ulož změny v sekci Profil a hledání.</p>}
+    {(error || hunt.error) && <p role="alert" className="w-full text-sm text-danger">{error || hunt.error}</p>}
+    {hunt.status === 'blocked' && <p role="alert" className="w-full text-sm text-fit-potential-text">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení se zastavilo. Podrobnosti najdeš v Profil a hledání.'}</p>}
+    {['done','partial'].includes(hunt.status) && hunt.result && <p role="status" className="w-full text-xs text-ink-secondary">{hunt.status === 'partial' ? 'Hledání částečně dokončeno' : 'Hledání dokončeno'} · uloženo {hunt.result.saved} nabídek</p>}
   </section>;
-  return <section aria-labelledby="profile-title" className="mt-6 rounded-2xl border border-viatix-teal/25 bg-viatix-sand2 p-4 sm:p-5">
+  return <section aria-labelledby="profile-title" className="mt-6 rounded-2xl border border-border-subtle bg-surface p-4 sm:p-5">
     <div className="flex flex-wrap items-center justify-between gap-4">
-      <div className="flex min-w-0 items-center gap-3"><UserRound className="h-5 w-5 shrink-0 text-viatix-teal" aria-hidden="true" /><div>
-        <p className="text-xs text-muted-foreground">Profil pro hledání</p>
+      <div className="flex min-w-0 items-center gap-3"><UserRound className="h-5 w-5 shrink-0 text-brand" aria-hidden="true" /><div>
+        <p className="text-xs text-ink-secondary">Profil pro hledání</p>
         <h2 id="profile-title" className="mt-1 break-words font-display text-lg font-semibold">{profile?.name || (busy ? 'Načítám tvůj profil…' : profileLoaded && !error ? 'Začni svým pracovním profilem' : 'Profil se nepodařilo načíst')}</h2>
       </div></div>
       {profile && <div className="flex flex-wrap items-center gap-2">
@@ -133,74 +133,76 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
           {running ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />}
           {running ? (hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…') : 'Hledat nové nabídky'}
         </button>
-        {running && <button type="button" onClick={stopHunt} disabled={stopping || hunt.status === 'stopping'} className="button-secondary border-red-300 text-red-700"><Square className="h-4 w-4" aria-hidden="true" />{stopping || hunt.status === 'stopping' ? 'Zastavuji…' : 'Zastavit hledání'}</button>}
+        {running && <button type="button" onClick={stopHunt} disabled={stopping || hunt.status === 'stopping'} className="button-secondary border-border-subtle text-danger"><Square className="h-4 w-4" aria-hidden="true" />{stopping || hunt.status === 'stopping' ? 'Zastavuji…' : 'Zastavit hledání'}</button>}
       </div>}
     </div>
 
+    {profile && !compact && <section className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border-subtle bg-surface-subtle p-4"><div><h3 className="text-sm font-semibold">Dokumenty k přihláškám</h3><p className="mt-1 text-sm text-ink-secondary">Spravuj více verzí CV a motivační dopisy. U přihlášky označíš, které podklady jsi firmě poslal.</p></div><button type="button" className="button-secondary" onClick={onManageDocuments}>Otevřít Dokumenty</button></section>}
+
     {profileLoaded && !profile && !error && <div className="mt-5">
-      <p className="text-sm leading-relaxed text-muted-foreground">MakAI potřebuje znát tvoje zkušenosti a preference, aby našlo práci, která ti sedí.</p>
+      <p className="text-sm leading-relaxed text-ink-secondary">MakAI potřebuje znát tvoje zkušenosti a preference, aby našlo práci, která ti sedí.</p>
       <ol className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-        <li><strong className="text-viatix-teal">1. Vytvoř profil</strong><p className="mt-1 text-muted-foreground">Ze životopisu nebo krátkého dotazníku.</p></li>
-        <li><strong className="text-viatix-teal">2. Zkontroluj preference</strong><p className="mt-1 text-muted-foreground">Role, lokalitu a mzdové podmínky.</p></li>
-        <li><strong className="text-viatix-teal">3. Najdi první nabídky</strong><p className="mt-1 text-muted-foreground">Potom si můžeš zapnout automatiku.</p></li>
+        <li><strong className="text-brand">1. Vytvoř profil</strong><p className="mt-1 text-ink-secondary">Ze životopisu nebo krátkého dotazníku.</p></li>
+        <li><strong className="text-brand">2. Zkontroluj preference</strong><p className="mt-1 text-ink-secondary">Role, lokalitu a mzdové podmínky.</p></li>
+        <li><strong className="text-brand">3. Najdi první nabídky</strong><p className="mt-1 text-ink-secondary">Potom si můžeš zapnout automatiku.</p></li>
       </ol>
       <ProfileWizard draftKey={'profile-wizard:' + (profile?.id || 'new')} disabled={busy || running} onBusyChange={setBuilding} triggerLabel="Vytvořit můj profil" primary onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
     </div>}
 
     {profile && <>
       {cloud && profiles.length > 1 && <label className="mt-4 block text-sm">Aktivní profil
-        <select value={profile.id} disabled={busy || running || building} onChange={event => changeProfile({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) })} className="mt-2 w-full rounded-xl border border-viatix-line bg-white/60 px-3 py-3">
+        <select value={profile.id} disabled={busy || running || building} onChange={event => changeProfile({ method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: event.target.value }) })} className="mt-2 w-full rounded-xl border border-border-subtle bg-surface px-3 py-3">
           {profiles.map(item => <option key={item.id} value={item.id}>{item.name}{item.revision ? ' · verze ' + (item.revision + 1) : ''}</option>)}
         </select>
-        <span className="mt-1 block text-xs text-muted-foreground">Stejný výběr a historie na localhostu i online. Přepnutí profilu pozastaví automatiku.</span>
+        <span className="mt-1 block text-xs text-ink-secondary">Stejný výběr a historie na localhostu i online. Přepnutí profilu pozastaví automatiku.</span>
       </label>}
-      <details className="mt-4 border-t border-viatix-line/60 pt-3">
-        <summary className="cursor-pointer py-1 text-sm font-medium text-viatix-teal">Profil a preference</summary>
+      <details className="mt-4 border-t border-border-subtle pt-3">
+        <summary className="cursor-pointer py-1 text-sm font-medium text-brand">Profil a preference</summary>
         <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
-          <div><h3 className="font-semibold">Kariérní směr</h3><p className="mt-2 leading-relaxed text-muted-foreground">{profile.searchTerms.join(' · ')}</p></div>
-          <div><h3 className="font-semibold">Lokalita a jazyky</h3><p className="mt-2 leading-relaxed text-muted-foreground">{profile.profile.location_preferences.join(' · ') || 'Lokalita neuvedena'}</p><p className="mt-2 text-muted-foreground">{profile.profile.language_preferences.join(' · ') || 'Jazyky neuvedeny'}</p></div>
-          <div><h3 className="font-semibold">Mzdové preference</h3><p className="mt-2 text-muted-foreground">Cíl {profile.profile.salary.monthly_gross_target_czk.map(money).join('–')} Kč</p><p className="mt-2 text-muted-foreground">Běžné minimum {money(profile.profile.salary.standard_minimum_czk)} Kč</p><p className="mt-1 text-xs text-muted-foreground">Hrubá měsíční mzda</p></div>
+          <div><h3 className="font-semibold">Kariérní směr</h3><p className="mt-2 leading-relaxed text-ink-secondary">{profile.searchTerms.join(' · ')}</p></div>
+          <div><h3 className="font-semibold">Lokalita a jazyky</h3><p className="mt-2 leading-relaxed text-ink-secondary">{profile.profile.location_preferences.join(' · ') || 'Lokalita neuvedena'}</p><p className="mt-2 text-ink-secondary">{profile.profile.language_preferences.join(' · ') || 'Jazyky neuvedeny'}</p></div>
+          <div><h3 className="font-semibold">Mzdové preference</h3><p className="mt-2 text-ink-secondary">Cíl {profile.profile.salary.monthly_gross_target_czk.map(money).join('–')} Kč</p><p className="mt-2 text-ink-secondary">Běžné minimum {money(profile.profile.salary.standard_minimum_czk)} Kč</p><p className="mt-1 text-xs text-ink-secondary">Hrubá měsíční mzda</p></div>
         </div>
-        <ProfileEditor key={'editor-' + profile.id + ':' + (profile.revision || 0)} profile={profile} disabled={busy || running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, replaceProfileId: cloud ? profile.id : undefined, expectedRevision: payload.expectedRevision ?? profile.revision ?? 0 }) })} />
-        <details className="mt-4"><summary className="cursor-pointer py-1 text-sm text-viatix-teal">Další možnosti profilu</summary>
+        <ProfileEditor key={'editor-' + profile.id + ':' + (profile.revision || 0)} profile={profile} disabled={busy || running || building} onSave={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, replaceProfileId: cloud ? profile.id : undefined, preserveCvFromProfileId: cloud ? undefined : profile.id, expectedRevision: payload.expectedRevision ?? profile.revision ?? 0 }) })} />
+        <details className="mt-4"><summary className="cursor-pointer py-1 text-sm text-brand">Další možnosti profilu</summary>
           <ProfileWizard draftKey={'profile-wizard:' + (profile?.id || 'new')} disabled={busy || running} onBusyChange={setBuilding} onActivate={payload => changeProfile({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })} />
           {!cloud && !profile.isDefault && <button type="button" className="button-secondary mt-3" disabled={busy || running || building} onClick={() => changeProfile({ method: 'DELETE' })}>Použít můj výchozí profil</button>}
           <button type="button" onClick={download} className="button-secondary mt-3">Stáhnout aktuální profil</button>
-          <details className="mt-3"><summary className="cursor-pointer py-1 text-sm text-viatix-teal">Zobrazit podklady profilu</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-white/40 p-4 font-sans text-xs leading-relaxed">{profile.content}</pre></details>
+          <details className="mt-3"><summary className="cursor-pointer py-1 text-sm text-brand">Zobrazit podklady profilu</summary><pre className="mt-3 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-surface-subtle p-4 font-sans text-xs leading-relaxed">{profile.content}</pre></details>
         </details>
       </details>
       {cloud && <SchedulePanel key={'schedule-' + profile.id + ':' + (profile.revision || 0)} hasProfile draftKey={'schedule:' + profile.id} profileUpdated={profileUpdated} onDirtyChange={setScheduleDirty} onSearch={options => startHunt(options)} searchDisabled={busy || running || building} />}
       {!cloud && <details className="mt-3">
-        <summary className="cursor-pointer py-1 text-sm font-medium text-viatix-teal">Nastavení hledání</summary>
-        <fieldset disabled={busy || running || building} className="mt-3 space-y-3 rounded-xl border border-viatix-line/60 p-4">
-          <label className="block text-sm">Stáří inzerátů<select aria-label="Stáří inzerátů pro nové hledání" value={period} onChange={event => setPeriod(event.target.value)} className="ml-3 rounded-xl border border-viatix-line bg-transparent px-3 py-2"><option value="all">Bez omezení stáří</option><option value="24h">Posledních 24 hodin</option><option value="7d">Posledních 7 dní</option><option value="30d">Posledních 30 dní</option></select></label>
-          <p className="text-xs text-muted-foreground">Podle data zveřejnění na portálu, nikoli data hodnocení v MakAI.</p>
+        <summary className="cursor-pointer py-1 text-sm font-medium text-brand">Nastavení hledání</summary>
+        <fieldset disabled={busy || running || building} className="mt-3 space-y-3 rounded-xl border border-border-subtle p-4">
+          <label className="block text-sm">Stáří inzerátů<select aria-label="Stáří inzerátů pro nové hledání" value={period} onChange={event => setPeriod(event.target.value)} className="ml-3 rounded-xl border border-border-subtle bg-surface px-3 py-2"><option value="all">Bez omezení stáří</option><option value="24h">Posledních 24 hodin</option><option value="7d">Posledních 7 dní</option><option value="30d">Posledních 30 dní</option></select></label>
+          <p className="text-xs text-ink-secondary">Podle data zveřejnění na portálu, nikoli data hodnocení v MakAI.</p>
           {period !== 'all' && <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={includeUnknownDates} onChange={event => setIncludeUnknownDates(event.target.checked)} className="mt-1" />Zahrnout i nabídky bez ověřitelného data zveřejnění</label>}
-          <label className="block text-sm">Nabídek na portál<select aria-label="Počet nabídek na portál" value={limit} onChange={event => setLimit(event.target.value)} className="ml-3 rounded-xl border border-viatix-line bg-transparent px-3 py-2">{[5, 10, 15, 30].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label className="block text-sm">Nabídek na portál<select aria-label="Počet nabídek na portál" value={limit} onChange={event => setLimit(event.target.value)} className="ml-3 rounded-xl border border-border-subtle bg-surface px-3 py-2">{[5, 10, 15, 30].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
         </fieldset>
       </details>}
-      <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{cloud ? 'Tvůj profil a výsledky jsou dostupné na všech připojených zařízeních. Automatické hledání může běžet i při zavřené aplikaci.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
+      <p className="mt-3 text-xs leading-relaxed text-ink-secondary">{cloud ? 'Tvůj profil a výsledky jsou dostupné na všech připojených zařízeních. Automatické hledání může běžet i při zavřené aplikaci.' : 'Hledání běží na tomto počítači. Automatiku nastav v online aplikaci.'}</p>
     </>}
 
-    {notice && <p role="status" className="mt-3 text-sm text-viatix-teal">{notice}</p>}
-    {running && <p role="status" className="mt-3 text-sm text-viatix-teal">{hunt.status === 'stopping' ? 'Ukončuji hledání a další AI hodnocení…' : hunt.status === 'queued' ? 'Hledání čeká na spuštění. Stránku můžeš zavřít.' : 'Procházím pracovní nabídky a hodnotím jejich shodu. Může to trvat několik minut.'}</p>}
-    {running && <p className="mt-2 text-xs text-muted-foreground">Již odeslané AI požadavky mohou být účtovány i po zastavení.</p>}
+    {notice && <p role="status" className="mt-3 text-sm text-brand">{notice}</p>}
+    {running && <p role="status" className="mt-3 text-sm text-brand">{hunt.status === 'stopping' ? 'Ukončuji hledání a další AI hodnocení…' : hunt.status === 'queued' ? 'Hledání čeká na spuštění. Stránku můžeš zavřít.' : 'Procházím pracovní nabídky a hodnotím jejich shodu. Může to trvat několik minut.'}</p>}
+    {running && <p className="mt-2 text-xs text-ink-secondary">Již odeslané AI požadavky mohou být účtovány i po zastavení.</p>}
     {hunt.status === 'cancelled' && <p role="status" className="mt-3 text-sm">Hledání bylo zastaveno. Uložené nabídky zůstávají dostupné.</p>}
     {['done', 'partial'].includes(hunt.status) && hunt.result && <div className="mt-3">
       <p role="status" className="text-sm">{hunt.status === 'partial' || hunt.result.evaluationBlocked ? 'Hledání je částečně dokončené.' : 'Hledání dokončeno.'} Uloženo {hunt.result.saved} nabídek · {displayTime(hunt.startedAt)}</p>
-      <details className="mt-2"><summary className="cursor-pointer py-1 text-xs font-medium text-viatix-teal">Podrobnosti posledního hledání</summary>
-        <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
+      <details className="mt-2"><summary className="cursor-pointer py-1 text-xs font-medium text-brand">Podrobnosti posledního hledání</summary>
+        <div className="mt-2 text-xs leading-relaxed text-ink-secondary">
           <p>Nalezeno {hunt.result.found} · Vyhodnoceno {hunt.result.evaluated} · Již uložených {hunt.result.skippedDuplicates ?? 0}</p>
           {hunt.result.sources?.map(source => <p key={source.portal} className="mt-1">{source.portal}: {source.status === 'error' ? 'Zdroj se nepodařilo načíst' : source.found + ' nových nabídek'}{source.scanLimitReached ? ' · dosažen limit procházení' : ''}</p>)}
           <p className="mt-1">Mimo období {hunt.result.skippedOutsidePeriod ?? 0} · Bez ověřitelného data {hunt.result.skippedUnknownDate ?? 0}</p>
-          {hunt.result.errors?.map((message, index) => <p key={index} className="mt-1 text-amber-800">{message}</p>)}
+          {hunt.result.errors?.map((message, index) => <p key={index} className="mt-1 text-fit-potential-text">{message}</p>)}
         </div>
       </details>
     </div>}
-    {(error || hunt.status === 'error') && <p role="alert" className="mt-3 text-sm text-red-700">{error || hunt.error}</p>}
+    {(error || hunt.status === 'error') && <p role="alert" className="mt-3 text-sm text-danger">{error || hunt.error}</p>}
     {profileLoaded && !profile && error && <button type="button" className="button-secondary mt-3" onClick={() => window.location.reload()}>Zkusit načíst profil znovu</button>}
-    {cloud && hunt.result?.evaluationLimitReached && <p role="status" className="mt-3 text-xs text-amber-800">Dosažen limit AI hodnocení. Další nabídky zůstávají pro příští hledání.</p>}
-    {cloud && hunt.status === 'blocked' && <p role="alert" className="mt-3 text-sm text-amber-800">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení bylo zastaveno. Zkontroluj API kvótu.'}</p>}
-    {cloud && hunt.runs?.length > 0 && <details className="mt-5 border-t border-viatix-line/60 pt-4"><summary className="cursor-pointer text-sm font-medium text-viatix-teal">Historie spuštění</summary><ul className="mt-3 space-y-3">{hunt.runs.map(run => <li key={run.id} className="rounded-xl bg-white/40 p-3 text-xs leading-relaxed"><p>{displayTime(run.startedAt)} · {run.source === 'scheduled' ? 'Automaticky' : 'Ručně'} · {{ queued: 'Ve frontě', running: 'Probíhá', stopping: 'Zastavuje se', cancelled: 'Zastaveno', done: 'Dokončeno', partial: 'Částečně dokončeno', blocked: 'AI limit', error: 'Chyba' }[run.status] || run.status}</p>{run.result && <p className="mt-1 text-muted-foreground">Nalezeno {run.result.found} · Vyhodnoceno {run.result.evaluated} · Uloženo {run.result.saved}</p>}{run.error && <p className="mt-1 text-red-700">{run.error}</p>}</li>)}</ul></details>}
+    {cloud && hunt.result?.evaluationLimitReached && <p role="status" className="mt-3 text-xs text-fit-potential-text">Dosažen limit AI hodnocení. Další nabídky zůstávají pro příští hledání.</p>}
+    {cloud && hunt.status === 'blocked' && <p role="alert" className="mt-3 text-sm text-fit-potential-text">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení bylo zastaveno. Zkontroluj API kvótu.'}</p>}
+    {cloud && hunt.runs?.length > 0 && <details className="mt-5 border-t border-border-subtle pt-4"><summary className="cursor-pointer text-sm font-medium text-brand">Historie spuštění</summary><ul className="mt-3 space-y-3">{hunt.runs.map(run => <li key={run.id} className="rounded-xl bg-surface-subtle p-3 text-xs leading-relaxed"><p>{displayTime(run.startedAt)} · {run.source === 'scheduled' ? 'Automaticky' : 'Ručně'} · {{ queued: 'Ve frontě', running: 'Probíhá', stopping: 'Zastavuje se', cancelled: 'Zastaveno', done: 'Dokončeno', partial: 'Částečně dokončeno', blocked: 'AI limit', error: 'Chyba' }[run.status] || run.status}</p>{run.result && <p className="mt-1 text-ink-secondary">Nalezeno {run.result.found} · Vyhodnoceno {run.result.evaluated} · Uloženo {run.result.saved}</p>}{run.error && <p className="mt-1 text-danger">{run.error}</p>}</li>)}</ul></details>}
   </section>;
 }

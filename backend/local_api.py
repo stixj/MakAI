@@ -9,8 +9,9 @@ from app.history import history_page
 from app.profile_builder import builder_config, generate_profile, ProfileGenerationError
 from app.evaluator import evaluation_context, evaluate_job
 from app.graph import build_graph
-from app.profile_registry import (get_profile, profile_directory, profile_payload, reset_profile,
-                                  result_rows, selected_id, upload_profile)
+from app.profile_registry import (cv_document_payload, delete_cv_document, get_profile, profile_directory,
+                                  profile_payload, reset_profile, result_rows, save_cv_document,
+                                  selected_id, upload_profile)
 from app.scrapers import SCRAPERS, DEFAULT_PORTALS
 from app.scrapers.base import ScraperError
 from app.scrapers.startupjobs import fetch_startupjobs
@@ -119,7 +120,23 @@ def main() -> int:
         if action == "profile":
             output = profile_payload(selected_id())
         elif action == "upload":
-            output = upload_profile(payload["name"], payload["content"])
+            output = upload_profile(payload["name"], payload["content"], payload.get("cvDocument"), payload.get("preserveCvFromProfileId"))
+        elif action == "cv-document-info":
+            if payload.get("profileId") and payload["profileId"] != selected_id():
+                raise ValueError("Aktivní profil se změnil. Obnov stránku.")
+            output = {"cvDocument": cv_document_payload(selected_id())}
+        elif action == "cv-document-download":
+            if payload.get("profileId") and payload["profileId"] != selected_id():
+                raise ValueError("Aktivní profil se změnil. Obnov stránku.")
+            output = {"cvDocument": cv_document_payload(selected_id(), include_content=True)}
+        elif action == "cv-document-save":
+            if payload.get("profileId") and payload["profileId"] != selected_id():
+                raise ValueError("Aktivní profil se změnil. Obnov stránku.")
+            output = {"cvDocument": save_cv_document(selected_id(), payload)}
+        elif action == "cv-document-delete":
+            if payload.get("profileId") and payload["profileId"] != selected_id():
+                raise ValueError("Aktivní profil se změnil. Obnov stránku.")
+            output = delete_cv_document(selected_id())
         elif action == "reset":
             output = reset_profile()
         elif action == "history-page":

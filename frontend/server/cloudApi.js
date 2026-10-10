@@ -1,6 +1,6 @@
 import {translateOffer} from './offerTranslation.js';
 import { opportunityRequest, opportunityHistory } from './opportunityApi.js';
-import { builderConfig, analyseCv, generateDraft } from './profileBuilder.js';
+import { builderConfig, analyseCv, extractCv, generateDraft } from './profileBuilder.js';
 import { createClient } from '@libsql/client/http';
 import { createHash } from 'node:crypto';
 import { CloudStore, UserError } from './cloudStore.js';
@@ -100,11 +100,39 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         return send(200, await (route === 'profile-cv' ? analyseCv(payload, env, fetcher) : generateDraft(payload, env, fetcher)));
       }
       if (route === 'applications') return send(200, await opportunityRequest(store, request.method, request.url, request.method === 'GET' ? undefined : await readBody(request), { dispatch: () => dispatchWorker(env, fetcher), translate: payload => translateOffer(store,payload,env,fetcher) }));
+      if (route === 'documents') {
+        const url=new URL(request.url,'https://localhost'),profileId=url.searchParams.get('profileId')||undefined,id=url.searchParams.get('id');
+        if(request.method==='GET')return send(200,id?(url.searchParams.get('snapshot')==='1'?await store.getApplicationDocument(profileId,url.searchParams.get('offerId'),id):await store.getDocument(id,profileId,url.searchParams.get('download')==='1')):await store.listDocuments(profileId));
+        if(request.method==='POST'){
+          const payload=await readBody(request,3000000);
+          if(payload.action==='assign-cv-to-applications')return send(200,await store.documentsForAllApplications(payload.documentId));
+          if(payload.kind==='cv')payload.extractedText=await extractCv(payload);
+          return send(200,await store.saveDocument(payload));
+        }
+        if(request.method==='DELETE')return send(200,await store.deleteDocument(id,profileId));
+        return send(405,{error:'Dokument můžeš zobrazit, přidat nebo smazat.'});
+      }
       if (route === 'profile') {
-        if (request.method === 'GET') return send(200, new URL(request.url, 'https://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profile());
+        if (request.method === 'GET') return send(200, new URL(request.url, 'https://localhost').searchParams.get('list') === '1' ? await store.profiles() : await store.profileView());
         if (request.method === 'PUT') return send(200, await store.activateProfile((await readBody(request)).id));
-        if (request.method === 'POST') return send(200, await store.saveProfile(await readBody(request)));
+        if (request.method === 'POST') {
+          const payload = await readBody(request, 3000000);
+          if (payload.cvDocument) payload.cvDocument.extractedText = await extractCv(payload.cvDocument);
+          return send(200, await store.saveProfile(payload));
+        }
         return send(405, { error: 'Profil uprav nebo nahraj jeho novou verzi.' });
+      }
+      if (route === 'profile-document') {
+        const documentUrl = new URL(request.url, 'https://localhost');
+        const profileId = documentUrl.searchParams.get('profileId') || undefined;
+        if (request.method === 'GET') return send(200, await store.currentProfileDocument({ download: documentUrl.searchParams.get('download') === '1', profileId }));
+        if (request.method === 'POST') {
+          const payload = await readBody(request, 3000000);
+          payload.extractedText = await extractCv(payload);
+          return send(200, await store.saveCurrentProfileDocument(payload));
+        }
+        if (request.method === 'DELETE') return send(200, await store.deleteCurrentProfileDocument(profileId));
+        return send(405, { error: 'CV můžeš načíst, nahradit nebo smazat.' });
       }
       if (route === 'schedule') {
         if (request.method === 'GET') return send(200, await store.getSchedule());

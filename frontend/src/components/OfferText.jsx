@@ -13,10 +13,10 @@ export default function OfferText({profileId,offerId,text,translation}) {
       <button type="button" className={'filter-chip '+(!czech?'filter-chip-active':'')} aria-pressed={!czech} onClick={()=>setCzech(false)}>Originál</button>
       <button type="button" disabled={busy} className={'filter-chip '+(czech?'filter-chip-active':'')} aria-pressed={czech} onClick={translate}>{busy?'Překládám…':translated?'Česky':'Přeložit do češtiny'}</button>
     </div>}
-    {busy&&<p role="status" className="mt-3 text-sm text-muted-foreground">Překládám celý inzerát. Může to chvíli trvat.</p>}
-    {error&&<p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
-    {czech&&translated&&<p className="mt-3 text-xs text-muted-foreground">Strojový překlad. Nejasné podmínky porovnej s originálem.</p>}
-    {!translated&&text?.trim()&&<p className="mt-2 text-xs text-muted-foreground">Překlad používá AI a může čerpat API kredit. Uložený překlad se použije znovu.</p>}
+    {busy&&<p role="status" className="mt-3 text-sm text-ink-secondary">Překládám celý inzerát. Může to chvíli trvat.</p>}
+    {error&&<p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+    {czech&&translated&&<p className="mt-3 text-xs text-ink-secondary">Strojový překlad. Nejasné podmínky porovnej s originálem.</p>}
+    {!translated&&text?.trim()&&<p className="mt-2 text-xs text-ink-secondary">Překlad používá AI a může čerpat API kredit. Uložený překlad se použije znovu.</p>}
     <p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed">{czech&&translated?translated.text:text||'Text nabídky zatím není doplněný.'}</p>
   </div>;
 }

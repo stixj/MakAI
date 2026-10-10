@@ -94,7 +94,13 @@ test('online and local translation use the same cache and enforce authentication
 
 test('UI toggles priority, saves motivation, switches translated/original text and retains application context after reopen',async t=>{
  const {store,profileId,offerId}=await setup(t);const originalFetch=globalThis.fetch;let aiCalls=0;
+ const letter=await store.saveDocument({profileId,kind:'letter',name:'Motivační dopis.txt',textContent:'Motivuje mě možnost pracovat na smysluplném produktu.'});
  globalThis.fetch=async(url,options={})=>{
+  if(String(url).startsWith('/api/documents')){
+   const parsed=new URL(String(url),'http://localhost');const id=parsed.searchParams.get('id');
+   const result=id&&parsed.searchParams.get('snapshot')==='1'?await store.getApplicationDocument(profileId,parsed.searchParams.get('offerId'),id):id?await store.getDocument(id,profileId,parsed.searchParams.get('download')==='1'):await store.listDocuments(profileId);
+   return {ok:true,json:async()=>result};
+  }
   const payload=options.body?JSON.parse(options.body):{};
   const {opportunityRequest}=await import('./opportunityApi.js');
   const body=await opportunityRequest(store,options.method||'GET',url,payload,{translate:input=>translateOffer(store,input,env,async()=>{aiCalls++;return response('Práce na dálku. Nutná plynulá angličtina. Mzda 70 000 CZK.');})});
@@ -116,11 +122,13 @@ test('UI toggles priority, saves motivation, switches translated/original text a
   act(()=>renderer.unmount());await store.updateJobState({profileId,offerId,changes:{applied:true}});
   const {default:Detail}=await server.ssrLoadModule('/src/components/ApplicationDetail.jsx');
   await act(async()=>{renderer=create(React.createElement(Detail,props));});assert.ok(button('Moje priorita'));
-  act(()=>field('Jaké CV a podklady jsem poslal','textarea').props.onChange({target:{value:'CV_CZ_v3.pdf'}}));
+  const documentChoice=renderer.root.findAllByType('label').find(node=>text(node.props.children).includes(letter.document.name)).findByType('input');
+  act(()=>documentChoice.props.onChange({target:{checked:true}}));
   act(()=>field('Firma slíbila odpověď do').props.onChange({target:{value:'2099-10-12'}}));
   act(()=>field('Zadání od firmy','textarea').props.onChange({target:{value:'Připravit návrh'}}));
   await act(async()=>renderer.root.findByProps({'aria-label':'Detail přihlášky'}).findAllByType('form')[0].props.onSubmit({preventDefault(){}}));
   act(()=>renderer.unmount());await act(async()=>{renderer=create(React.createElement(Detail,props));});
-  assert.equal(field('Jaké CV a podklady jsem poslal','textarea').props.value,'CV_CZ_v3.pdf');assert.equal(field('Firma slíbila odpověď do').props.value,'2099-10-12');assert.ok(text(renderer.toJSON()).includes('Odevzdat zadání: Připravit návrh'));
+  assert.equal(field('Firma slíbila odpověď do').props.value,'2099-10-12');assert.ok(text(renderer.toJSON()).includes('Odevzdat zadání: Připravit návrh'));
+  assert.ok(text(renderer.toJSON()).includes('Motivační dopis.txt'));assert.equal((await applicationDetail(store,profileId,offerId)).sentDocumentSnapshots[0].id,letter.document.id);
  }finally{if(renderer)act(()=>renderer.unmount());await server.close();globalThis.fetch=originalFetch;}
 });

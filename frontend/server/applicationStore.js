@@ -16,7 +16,7 @@ export const applicationTables = [
   'CREATE INDEX IF NOT EXISTS makai_application_event_lookup ON makai_application_events(profile_id,offer_id,at)',
   'CREATE TABLE IF NOT EXISTS makai_manual_offers (profile_id TEXT NOT NULL, offer_id TEXT NOT NULL, offer TEXT NOT NULL, evaluation TEXT, evaluated_at TEXT, created_at TEXT NOT NULL, PRIMARY KEY(profile_id,offer_id))'
 ];
-export function blankApplication() { return { appliedAt: null, status: 'waiting', notes: '', salaryExpectation: '', reactionDetails: '', contacts: [], tasks: [], interviews: [], sentDocuments: '', applicationChannel: '', responseExpectedAt: null, applicationDeadline: null, selectionStage: '', assignment: '', assignmentDue: null, assignmentDone: false, questions: '', offeredConditions: '', outcomeReason: '' }; }
+export function blankApplication() { return { appliedAt: null, status: 'waiting', notes: '', salaryExpectation: '', reactionDetails: '', contacts: [], tasks: [], interviews: [], sentDocuments: '', sentDocumentIds: [], applicationChannel: '', responseExpectedAt: null, applicationDeadline: null, selectionStage: '', assignment: '', assignmentDue: null, assignmentDone: false, questions: '', offeredConditions: '', outcomeReason: '' }; }
 function text(value, max, required = false) {
   if (typeof value !== 'string' || value.length > max || required && !value.trim()) throw new UserError('Zkontroluj vyplněné údaje.');
   return value.trim();
@@ -36,7 +36,8 @@ function list(values, mapper) {
 export function validateApplication(input) {
   if (!input || !Object.hasOwn(APPLICATION_STATUSES,input.status)) throw new UserError('Vyber stav přihlášky.');
   if(input.assignmentDone!==undefined && typeof input.assignmentDone!=='boolean')throw new UserError('Zkontroluj stav zadání.');
-  return { assignmentDone: input.assignmentDone ?? false, sentDocuments: text(input.sentDocuments ?? '',3000), applicationChannel: text(input.applicationChannel ?? '',200), responseExpectedAt: date(input.responseExpectedAt ?? null), applicationDeadline: date(input.applicationDeadline ?? null), selectionStage: text(input.selectionStage ?? '',200), assignment: text(input.assignment ?? '',4000), assignmentDue: date(input.assignmentDue ?? null), questions: text(input.questions ?? '',4000), offeredConditions: text(input.offeredConditions ?? '',5000), outcomeReason: text(input.outcomeReason ?? '',2000), appliedAt: date(input.appliedAt), status: input.status, notes: text(input.notes, 20000), salaryExpectation: text(input.salaryExpectation ?? '',1000), reactionDetails: text(input.reactionDetails ?? '',5000),
+  if(input.sentDocumentIds!==undefined&&(!Array.isArray(input.sentDocumentIds)||input.sentDocumentIds.length>50||input.sentDocumentIds.some(id=>typeof id!=='string'||id.length>100)))throw new UserError('Zkontroluj vybrané dokumenty.');
+  return { assignmentDone: input.assignmentDone ?? false, sentDocuments: text(input.sentDocuments ?? '',3000), sentDocumentIds: [...new Set(input.sentDocumentIds||[])], applicationChannel: text(input.applicationChannel ?? '',200), responseExpectedAt: date(input.responseExpectedAt ?? null), applicationDeadline: date(input.applicationDeadline ?? null), selectionStage: text(input.selectionStage ?? '',200), assignment: text(input.assignment ?? '',4000), assignmentDue: date(input.assignmentDue ?? null), questions: text(input.questions ?? '',4000), offeredConditions: text(input.offeredConditions ?? '',5000), outcomeReason: text(input.outcomeReason ?? '',2000), appliedAt: date(input.appliedAt), status: input.status, notes: text(input.notes, 20000), salaryExpectation: text(input.salaryExpectation ?? '',1000), reactionDetails: text(input.reactionDetails ?? '',5000),
     contacts: list(input.contacts, c => ({ name: text(c.name,200,true), role: text(c.role,200), email: text(c.email,320), phone: text(c.phone,100) })),
     tasks: list(input.tasks, t => { if (typeof t.done !== 'boolean') throw new UserError('Neplatný stav úkolu.'); return { text: text(t.text,1000,true), due: date(t.due), done: t.done }; }),
     interviews: list(input.interviews, i => {
@@ -81,19 +82,20 @@ export async function applicationDetail(store,profileId,offerId,db=store.client)
   const basis=row.evaluation?(await db.execute({sql:'SELECT offer_revision FROM makai_offer_evaluation_versions WHERE profile_id=? AND offer_id=?',args:[profileId,offerId]})).rows[0]:null;
   const description=edited ? {...originalOffer,...JSON.parse(edited.payload)}.raw_description : originalOffer.raw_description;
   const translation=description ? (await db.execute({sql:'SELECT text,translated_at FROM makai_offer_translations WHERE profile_id=? AND offer_id=? AND source_hash=? AND status=?',args:[profileId,offerId,translationHash(description),'done']})).rows[0] || null : null;
-  return {id:offerId,profileId,interest,translation,state:{...state,priority:interest.priority},evaluatedAt:row.evaluated_at,evaluationStale:profileStale || (!!row.evaluation&&Number(edited?.revision||0)>Number(basis?.offer_revision||0)),offer:edited?{...originalOffer,...JSON.parse(edited.payload)}:originalOffer,originalOffer,offerRevision:Number(edited?.revision||0),offerEdited:!!edited,evaluation:row.evaluation?JSON.parse(row.evaluation):null,manual:!!row.manual,application:saved?{...blankApplication(),...JSON.parse(saved.payload)}:blankApplication(),revision:Number(saved?.revision||0),events};
+  return {id:offerId,profileId,interest,translation,state:{...state,priority:interest.priority},evaluatedAt:row.evaluated_at,evaluationStale:profileStale || (!!row.evaluation&&Number(edited?.revision||0)>Number(basis?.offer_revision||0)),offer:edited?{...originalOffer,...JSON.parse(edited.payload)}:originalOffer,originalOffer,offerRevision:Number(edited?.revision||0),offerEdited:!!edited,evaluation:row.evaluation?JSON.parse(row.evaluation):null,manual:!!row.manual,application:saved?{...blankApplication(),...JSON.parse(saved.payload)}:blankApplication(),sentDocumentSnapshots:await store.applicationDocuments(profileId,offerId,db),revision:Number(saved?.revision||0),events};
 }
 export async function updateApplication(store,input) {
   if (!Number.isSafeInteger(input?.revision) || input.revision<0) throw new UserError('Obnov detail přihlášky.');
   const application=validateApplication(input.application);
   return store.transaction(async db=>{
     const previous=await applicationDetail(store,input.profileId,input.offerId,db);
-    for(const key of ['sentDocuments','applicationChannel','responseExpectedAt','applicationDeadline','selectionStage','assignment','assignmentDue','assignmentDone','questions','offeredConditions','outcomeReason'])if(!Object.hasOwn(input.application,key))application[key]=previous.application[key];
+    for(const key of ['sentDocuments','sentDocumentIds','applicationChannel','responseExpectedAt','applicationDeadline','selectionStage','assignment','assignmentDue','assignmentDone','questions','offeredConditions','outcomeReason'])if(!Object.hasOwn(input.application,key))application[key]=previous.application[key];
     const state=(await db.execute({sql:'SELECT applied FROM makai_job_states WHERE profile_id=? AND offer_id=?',args:[input.profileId,input.offerId]})).rows[0];
     if (!state?.applied) throw new UserError('Nejdřív označ odeslanou reakci.',409);
     if (previous.revision!==input.revision) throw new UserError('Přihláška se mezitím změnila. Načti detail znovu.',409);
     const changes=Object.keys(application).filter(key=>JSON.stringify(application[key])!==JSON.stringify(previous.application[key]));
     if (!changes.length) return previous;
+    await store.attachDocumentsToApplication(input.profileId,input.offerId,application.sentDocumentIds,db);
     await db.execute({sql:'INSERT INTO makai_applications(profile_id,offer_id,payload,revision) VALUES(?,?,?,?) ON CONFLICT(profile_id,offer_id) DO UPDATE SET payload=excluded.payload,revision=excluded.revision',args:[input.profileId,input.offerId,JSON.stringify(application),input.revision+1]});
     await appendEvent(store,db,input.profileId,input.offerId,'updated',{changes,before:previous.application,after:application});
     return applicationDetail(store,input.profileId,input.offerId,db);

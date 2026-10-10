@@ -69,7 +69,9 @@ GitHub login token into Vercel. If using a shared computer, protect these local 
    CV analysis prefills documented experience, skills and languages; confirm the
    desired career, location, salary and any AI follow-up questions. Review and edit
    the draft, then explicitly activate it. Existing profiles remain active until then.
-   Raw uploaded files are not persisted; only reviewed profile data is saved.
+   The wizard upload is used for analysis and is not persisted there; only reviewed
+   profile data is saved. Files deliberately added later to the **Dokumenty** library
+   are stored with the active profile so they can be attached to applications.
    Scanned/image-only PDFs require a text version or the questionnaire.
    CV text and answers are sent to the provider displayed in the wizard (Gemini or
    OpenAI; OpenAI uses `store: false`); contact details are

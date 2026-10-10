@@ -1,191 +1,113 @@
-/* Visual tokens copied from Viatix; no application logic is shared. */
-/* Viatix NextGen — brand tokens (Silent Luxury / Authentic Travel) */
-:root {
-  /* ── Primitives ── */
-  --viatix-teal: #005c63;
-  --viatix-teal-mid: #06474d;
-  --viatix-ink: #06282b;
-  --viatix-ink-2: #0c3539;
-  --viatix-mint: #57c7a7;
-  --viatix-mint-soft: #9fd9c8;
-  --viatix-amber: #ffb347;
-  --viatix-amber-hot: #ff8a3d;
-  --viatix-amber-text: #b85e18;
-  --viatix-gold: #e9c46a;
-  --viatix-sand: #f4ede4;
-  --viatix-sand-2: #fbf7f1;
-  --viatix-line: #e0d6c7;
-  --viatix-line-strong: #cfc2ae;
-  --viatix-muted: #5c6b6b;
-
-  --viatix-gradient: linear-gradient(105deg, #ff8a3d, #ffb347 38%, #57c7a7);
-  --viatix-gradient-v: linear-gradient(
-    to bottom,
-    #ff8a3d,
-    #ffb347 48%,
-    #57c7a7
-  );
-
-  /* Deep Ink tinted elevation, not pure black */
-  --viatix-shadow-sm: 0 1px 3px rgba(6, 40, 43, 0.08),
-    0 1px 2px rgba(6, 40, 43, 0.06);
-  --viatix-shadow-md: 0 10px 40px rgba(6, 40, 43, 0.12);
-  --viatix-shadow-lg: 0 20px 50px rgba(6, 40, 43, 0.18);
-  --viatix-shadow-glow-amber: 0 20px 50px rgba(255, 138, 61, 0.35);
-
-  /* ── Semantic aliases — light (default) ── */
-  --brand: var(--viatix-teal);
-  --brand-hover: var(--viatix-teal-mid);
-  --accent: var(--viatix-mint);
-  --accent-warm: var(--viatix-amber);
-
-  --surface-page: var(--viatix-sand);
-  --surface-card: var(--viatix-sand-2);
-  --surface-raised: #ffffff;
-  --border-subtle: var(--viatix-line);
-  --border-strong: #cfc2ae;
-
-  --text-primary: var(--viatix-teal);
-  --text-secondary: var(--viatix-teal-mid);
-  --text-muted: var(--viatix-muted);
-  --text-on-brand: #ffffff;
-}
-
-/* ── Dark mode overrides ── */
-.dark {
-  --surface-page: var(--viatix-ink);
-  --surface-card: var(--viatix-ink-2);
-  --surface-raised: #102f33;
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.16);
-
-  --text-primary: var(--viatix-sand);
-  --text-secondary: var(--viatix-mint-soft);
-  --text-muted: #7e9491;
-  --accent: var(--viatix-mint-soft);
-}
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    /* Warm sand background, Deep Ink foreground (Silent Luxury) */
-    --background: 36 33% 93%;
-    --foreground: 184 64% 11%;
-    --card: 36 38% 98%;
-    --card-foreground: 184 64% 11%;
-    --primary: 184 100% 19%;
-    --primary-foreground: 36 38% 98%;
-    --secondary: 36 25% 92%;
-    --secondary-foreground: 184 64% 11%;
-    --muted: 36 20% 88%;
-    --muted-foreground: 184 9% 39%;
-    --accent: 158 50% 56%;
-    --accent-foreground: 184 64% 11%;
-    --accent-orange: 21 100% 62%;
-    --accent-coral: 36 100% 63%;
-    --border: 36 32% 84%;
-    --ring: 184 100% 19%;
-  }
+:root {
+  color-scheme: light;
+  --text-scale: 1;
 
-  .dark {
-    /* Deep Ink chrome, mint accents (no generic gray/slate) */
-    --background: 184 64% 11%;
-    --foreground: 36 33% 93%;
-    --card: 184 56% 14%;
-    --card-foreground: 36 33% 93%;
-    --primary: 158 50% 56%;
-    --primary-foreground: 184 64% 11%;
-    --secondary: 184 40% 18%;
-    --secondary-foreground: 36 33% 93%;
-    --muted: 184 30% 20%;
-    --muted-foreground: 158 20% 70%;
-    --accent: 152 41% 73%;
-    --accent-foreground: 184 64% 11%;
-    --accent-orange: 21 100% 62%;
-    --accent-coral: 36 100% 63%;
-    --border: 184 30% 22%;
-    --ring: 158 50% 56%;
-  }
+  --canvas: #f5f6f3;
+  --surface: #ffffff;
+  --surface-subtle: #f8f9f7;
 
-  html,
-  body {
-    font-family:
-      "Inter",
-      system-ui,
-      -apple-system,
-      sans-serif;
-    -webkit-font-smoothing: antialiased;
-    background-color: var(--viatix-sand);
-    color: var(--viatix-ink);
-  }
+  --text-primary: #1c2421;
+  --text-secondary: #5a6661;
+  --text-tertiary: #87948f;
 
-  .dark body {
-    background-color: var(--viatix-ink);
-    color: var(--viatix-sand);
-  }
+  --border-subtle: #e5e9e5;
 
-  ::-webkit-scrollbar {
-    width: 4px;
-    height: 4px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background: #e2e8f0;
-    border-radius: 9999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
-  }
+  --brand: #126e66;
+  --brand-hover: #0f5c56;
 
-  /* Global keyboard-navigation focus ring — :focus-visible only, no mouse-click noise */
-  :where(
-      a,
-      button,
-      input,
-      textarea,
-      select,
-      summary,
-      [role="button"],
-      [tabindex]:not([tabindex="-1"])
-    ):focus-visible {
-    outline: 3px solid var(--viatix-mint);
-    outline-offset: 3px;
-  }
+  --fit-strong-bg: #e9f2ec;
+  --fit-strong-text: #2d5a42;
+  --fit-potential-bg: #f5f0e4;
+  --fit-potential-text: #6e5528;
+  --fit-low-bg: #f5ecea;
+  --fit-low-text: #7c4f48;
+
+  --danger: #9b4941;
+  --danger-hover: #813b35;
+  --danger-bg: #f6eeec;
+  --scrim: rgb(28 36 33 / 45%);
 }
 
+:root[data-text-size="small"] { --text-scale: 0.92; }
+:root[data-text-size="medium"] { --text-scale: 1; }
+:root[data-text-size="large"] { --text-scale: 1.12; }
 
 @layer base {
-  body { margin: 0; min-width: 320px; }
+  html,
+  body {
+    min-width: 320px;
+    margin: 0;
+    background: var(--canvas);
+    color: var(--text-primary);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
   #root { min-height: 100vh; }
-  ::selection { background: var(--viatix-mint-soft); color: var(--viatix-ink); }
-  button, summary { min-width: 44px; min-height: 44px; }
-  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: max(14px, 1em); }
+
+  ::selection {
+    color: var(--text-primary);
+    background: #dcebe3;
+  }
+
+  :where(a, button, input, textarea, select, summary, [role="button"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--brand) 48%, white);
+    outline-offset: 2px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    color: var(--text-primary);
+    background-color: var(--surface);
+    font-size: max(14px, 1em);
+  }
+
   input:not([type="checkbox"]):not([type="radio"]), select { min-height: 44px; }
+  button, summary { min-width: 44px; min-height: 44px; }
   a.button-primary, a.button-secondary { min-height: 44px; }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd3ce; border-radius: 9999px; }
+  ::-webkit-scrollbar-thumb:hover { background: #aab5af; }
 }
 
 @layer components {
-  .button-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-viatix-teal px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#06474d] disabled:cursor-wait disabled:opacity-60; }
-  .button-secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-viatix-line bg-viatix-sand2 px-4 py-2.5 text-sm font-medium text-viatix-teal transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60; }
-  .job-card { @apply flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card transition-all duration-200; }
-  .job-card:hover { @apply -translate-y-0.5 shadow-card-hover; }
+  .button-primary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition-[background-color,transform,box-shadow] duration-150 ease-out hover:bg-brand-hover active:scale-[0.985] disabled:cursor-wait disabled:opacity-55;
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 16%), 0 1px 2px rgb(28 36 33 / 12%);
+  }
+  .button-primary:active { box-shadow: none; }
+
+  .button-secondary {
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border-subtle bg-surface px-4 py-2.5 text-sm font-medium text-ink transition-[background-color,border-color,transform] duration-150 hover:bg-surface-subtle hover:border-[#d7ded9] active:scale-[0.985] disabled:cursor-wait disabled:opacity-55;
+  }
+
+  .job-card {
+    @apply flex flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface transition-[transform,box-shadow,border-color] duration-200 ease-out;
+    box-shadow: 0 1px 2px rgb(28 36 33 / 4%), 0 6px 20px rgb(28 36 33 / 4.5%);
+  }
+  .job-card:hover {
+    @apply -translate-y-px border-[#dce2dd];
+    box-shadow: 0 2px 4px rgb(28 36 33 / 4%), 0 10px 28px rgb(28 36 33 / 7.5%);
+  }
+
+  .nav-tab { @apply relative min-h-12 flex-1 whitespace-nowrap px-3 py-3 text-center text-sm font-medium text-ink-secondary transition-colors hover:text-brand sm:flex-none sm:px-5; }
+  .nav-tab-active { @apply text-brand; }
+  .nav-tab-active::after { content: ''; @apply absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-brand; }
+  .filter-chip { @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm text-ink-secondary transition-colors hover:bg-surface-subtle; }
+  .filter-chip-active { @apply border-border-subtle bg-surface-subtle font-medium text-brand; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   .job-card:hover { transform: none; }
-}
-@layer components {
-  .nav-tab { @apply relative min-h-12 flex-1 whitespace-nowrap px-3 py-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-viatix-teal sm:flex-none sm:px-5; }
-  .nav-tab-active { @apply text-viatix-teal; }
-  .nav-tab-active::after { content: ''; @apply absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-viatix-teal; }
-  .filter-chip { @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-viatix-teal/5; }
-  .filter-chip-active { @apply border-viatix-teal/20 bg-viatix-teal/10 font-medium text-viatix-teal; }
 }
 
 @keyframes reveal {
@@ -194,6 +116,4 @@
 }
 .animate-reveal { animation: reveal 220ms ease-out both; }
 
-/* Keep touch targets consistent even when a component utility asks for less. */
-button, summary { min-width: 44px; min-height: 44px; }
 label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; }

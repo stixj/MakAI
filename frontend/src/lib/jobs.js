@@ -1,8 +1,8 @@
 import { normalizeJobState } from './jobState.js';
 export const VERDICTS = {
-  STRONG_FIT: { label: 'Silná shoda', title: 'Silná shoda', color: 'bg-viatix-mint/20 text-viatix-teal', dot: 'bg-viatix-teal' },
-  POTENTIAL_FIT: { label: 'Možná shoda', title: 'Možná shoda', color: 'bg-viatix-amber/20 text-[#9a4b12]', dot: 'bg-viatix-amber-hot' },
-  NO_GO: { label: 'Nízká shoda', title: 'Nízká shoda', color: 'bg-rose-500/10 text-rose-700', dot: 'bg-rose-500' },
+  STRONG_FIT: { label: 'Silná shoda', title: 'Silná shoda', color: 'bg-fit-strong-bg text-fit-strong-text', dot: 'bg-fit-strong-text' },
+  POTENTIAL_FIT: { label: 'Možná shoda', title: 'Možná shoda', color: 'bg-fit-potential-bg text-fit-potential-text', dot: 'bg-fit-potential-text' },
+  NO_GO: { label: 'Nízká shoda', title: 'Nízká shoda', color: 'bg-fit-low-bg text-fit-low-text', dot: 'bg-fit-low-text' },
 };
 export function safeOfferUrl(value) {
   try {

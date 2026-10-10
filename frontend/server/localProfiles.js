@@ -2,6 +2,7 @@ import { historyQuery } from './historyQuery.js';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { localRequest, historyOffset, HISTORY_PAGE_SIZE } from './localJobs.js';
+import { extractCv } from './profileBuilder.js';
 
 export function pythonBridge(projectRoot, action, payload = {}, { timeout = 30000, signal, spawnProcess = spawn } = {}) {
   return new Promise((resolve, reject) => {
@@ -14,7 +15,7 @@ export function pythonBridge(projectRoot, action, payload = {}, { timeout = 3000
     if (signal?.aborted) cancel();
     const timer = setTimeout(() => { child.kill(); reject(new Error('Zpracování překročilo časový limit.')); }, timeout);
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > 2000000) child.kill(); });
+    child.stdout.on('data', chunk => { stdout += chunk; if (stdout.length > 4000000) child.kill(); });
     child.stderr.resume();
     child.on('error', () => { signal?.removeEventListener('abort', cancel); clearTimeout(timer); reject(new Error('Python backend se nepodařilo spustit.')); });
     child.on('close', code => {
@@ -35,13 +36,13 @@ export function pythonBridge(projectRoot, action, payload = {}, { timeout = 3000
   });
 }
 
-async function readBody(request) {
+async function readBody(request, maxBytes = 1500000) {
   if (!request.headers['content-type']?.startsWith('application/json')) throw new Error('Použij JSON formát požadavku.');
   let size = 0;
   const chunks = [];
   for await (const chunk of request) {
     size += Buffer.byteLength(chunk);
-    if (size > 1500000) throw new Error('Soubor profilu je příliš velký.');
+    if (size > maxBytes) throw new Error('Soubor profilu je příliš velký.');
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks.map(c => Buffer.from(c))).toString('utf8')); }
@@ -56,13 +57,29 @@ export function localProfilesMiddleware(projectRoot, bridge = pythonBridge) {
   const call = (action, payload, options) => bridge(projectRoot, action, payload, options);
   return async (request, response, next) => {
     const route = request.url?.split('?')[0];
-    if (!['/api/profile', '/api/profile/draft', '/api/hunt', '/api/jobs'].includes(route)) return next();
+    if (!['/api/profile', '/api/profile/document', '/api/profile/draft', '/api/hunt', '/api/jobs'].includes(route)) return next();
     const send = (status, payload) => {
       response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end(JSON.stringify(payload));
     };
     if (!localRequest(request)) return send(403, { error: 'Přístup je povolen pouze z localhostu.' });
     try {
+      if (route === '/api/profile/document') {
+        const documentUrl = new URL(request.url, 'http://localhost');
+        const profileId = documentUrl.searchParams.get('profileId') || undefined;
+        if (request.method === 'GET') return send(200, await call(documentUrl.searchParams.get('download') === '1' ? 'cv-document-download' : 'cv-document-info', { profileId }));
+        if (!['POST', 'DELETE'].includes(request.method)) return send(405, { error: 'CV můžeš načíst, nahradit nebo smazat.' });
+        if (mutating || huntActive()) return send(409, { error: 'Počkej na dokončení hledání nebo změny profilu.' });
+        mutating = true;
+        try {
+          if (request.method === 'POST') {
+            const payload = await readBody(request, 3000000);
+            payload.extractedText = await extractCv(payload);
+            return send(200, await call('cv-document-save', payload));
+          }
+          return send(200, await call('cv-document-delete', { profileId }));
+        } finally { mutating = false; }
+      }
       if (route === '/api/profile/draft') {
         if (request.method === 'GET') return send(200, await call('builder-config'));
         if (request.method !== 'POST') return send(405, { error: 'Nepodporovaná metoda.' });
@@ -87,7 +104,8 @@ export function localProfilesMiddleware(projectRoot, bridge = pythonBridge) {
         if (mutating || huntActive()) return send(409, { error: 'Počkej na dokončení aktuálního hledání nebo změny profilu.' });
         mutating = true;
         try {
-          const payload = request.method === 'POST' ? await readBody(request) : {};
+          const payload = request.method === 'POST' ? await readBody(request, 3000000) : {};
+          if (payload.cvDocument) payload.cvDocument.extractedText = await extractCv(payload.cvDocument);
           const result = await call(request.method === 'POST' ? 'upload' : 'reset', payload);
           hunt = { status: 'idle' };
           return send(200, result);

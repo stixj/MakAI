@@ -61,34 +61,34 @@ export default function OfferDetail({ profileId, offerId, onClose, onStateChange
   const sources = detail ? getOfferSources(detail.offer) : [];
 
   return <section className="mt-6" aria-label="Detail nabídky">
-    <button type="button" className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-viatix-teal transition-colors hover:bg-viatix-teal/5" onClick={onClose}><ArrowLeft className="h-4 w-4" />Zpět na nabídky</button>
-    {!detail && !error && <p role="status" className="rounded-2xl border border-viatix-line bg-viatix-sand2 p-5 text-sm text-muted-foreground">Načítám nabídku…</p>}
-    {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
-    {detail && <div className="mx-auto max-w-4xl rounded-3xl border border-viatix-line/70 bg-viatix-sand2 p-5 sm:p-8">
+    <button type="button" className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-lg px-2 text-sm font-medium text-brand transition-colors hover:bg-surface-subtle" onClick={onClose}><ArrowLeft className="h-4 w-4" />Zpět na nabídky</button>
+    {!detail && !error && <p role="status" className="rounded-2xl border border-border-subtle bg-surface-subtle p-5 text-sm text-ink-secondary">Načítám nabídku…</p>}
+    {error && <p role="alert" className="mb-4 rounded-xl bg-danger-bg p-3 text-sm text-danger">{error}</p>}
+    {detail && <div className="mx-auto max-w-4xl rounded-3xl border border-border-subtle bg-surface p-5 sm:p-8">
       <header>
-        <p className="text-sm font-medium text-muted-foreground">{detail.offer.company}</p>
+        <p className="text-sm font-medium text-ink-secondary">{detail.offer.company}</p>
         <h1 className="mt-2 font-display text-2xl font-semibold leading-tight sm:text-3xl">{detail.offer.title}</h1>
-        <p className="mt-3 text-sm text-muted-foreground">{[detail.offer.location || 'Lokalita neuvedena', detail.offer.salary_raw || 'Mzda neuvedena'].join(' · ')}</p>
-        {detail.manual && <p role="status" className="mt-4 rounded-xl border border-viatix-teal/20 bg-viatix-teal/5 px-4 py-3 text-sm leading-relaxed text-viatix-teal">Nabídka je uložená v „Přidáno mnou“{evaluation ? ' a má AI hodnocení.' : ' a zatím nemá AI hodnocení.'}</p>}
+        <p className="mt-3 text-sm text-ink-secondary">{[detail.offer.location || 'Lokalita neuvedena', detail.offer.salary_raw || 'Mzda neuvedena'].join(' · ')}</p>
+        {detail.manual && <p role="status" className="mt-4 rounded-xl border border-border-subtle bg-surface-subtle px-4 py-3 text-sm leading-relaxed text-brand">Nabídka je uložená v „Přidáno mnou“{evaluation ? ' a má AI hodnocení.' : ' a zatím nemá AI hodnocení.'}</p>}
       </header>
 
-      <div className="mt-6 rounded-2xl border border-viatix-line bg-white p-5 sm:p-6">
+      <div className="mt-6 rounded-2xl border border-border-subtle bg-white p-5 sm:p-6">
         {evaluation ? <>
-          <div className="flex flex-wrap items-center gap-3"><span className={'inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold ' + (verdict?.color || 'bg-viatix-teal/10 text-viatix-teal')}>{detail.evaluationStale ? 'Hodnocení je zastaralé' : verdict?.label}</span><p className="font-display text-2xl font-semibold tracking-tight text-viatix-ink sm:text-3xl">{evaluation.score} / 100</p></div>
-          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">Skóre porovnává nabídku s tvým profilem. Pomáhá posoudit vhodnost práce; nevyjadřuje pravděpodobnost přijetí.</p>
-          {detail.evaluationStale && <p className="mt-4 rounded-xl bg-viatix-amber/15 p-3 text-sm leading-relaxed">Profil nebo nabídka se změnily. Nové hodnocení bude vycházet z aktuálních údajů.</p>}
+          <div className="flex flex-wrap items-center gap-3"><span className={'inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold ' + (verdict?.color || 'bg-surface-subtle text-brand')}>{detail.evaluationStale ? 'Hodnocení je zastaralé' : verdict?.label}</span><p className="font-display text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{evaluation.score} / 100</p></div>
+          <p className="mt-3 max-w-2xl text-sm leading-relaxed text-ink-secondary">Skóre porovnává nabídku s tvým profilem. Pomáhá posoudit vhodnost práce; nevyjadřuje pravděpodobnost přijetí.</p>
+          {detail.evaluationStale && <p className="mt-4 rounded-xl bg-fit-potential-bg text-fit-potential-text p-3 text-sm leading-relaxed">Profil nebo nabídka se změnily. Nové hodnocení bude vycházet z aktuálních údajů.</p>}
         </> : <>
           <h2 className="font-display text-xl font-semibold">Zatím bez hodnocení shody</h2>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Porovnáme požadavky nabídky s tvým profilem a ukážeme, co stojí za pozornost.</p>
+          <p className="mt-2 text-sm leading-relaxed text-ink-secondary">Porovnáme požadavky nabídky s tvým profilem a ukážeme, co stojí za pozornost.</p>
         </>}
         {needsEvaluation && <div className="mt-5"><button type="button" disabled={busy || evaluating || !detail.offer.raw_description?.trim()} onClick={evaluate} className="button-primary min-h-11 w-full sm:w-auto">{evaluating || busy ? <><Loader2 className="h-4 w-4 animate-spin" />{evaluating ? 'Hodnocení připravujeme…' : 'Odesílám k hodnocení…'}</> : <><Sparkles className="h-4 w-4" />{evaluation ? 'Znovu vyhodnotit s AI' : 'Spustit AI evaluaci'}</>}</button>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">AI hodnocení může využívat placené API. {!detail.offer.raw_description?.trim() && 'Nejdřív doplň text inzerátu v části Další možnosti.'}</p></div>}
-        {notice && <p role="status" className="mt-4 text-sm text-viatix-teal">{notice}</p>}
+          <p className="mt-2 text-sm leading-relaxed text-ink-secondary">AI hodnocení může využívat placené API. {!detail.offer.raw_description?.trim() && 'Nejdřív doplň text inzerátu v části Další možnosti.'}</p></div>}
+        {notice && <p role="status" className="mt-4 text-sm text-brand">{notice}</p>}
       </div>
 
-      {!needsEvaluation && <div className="mt-4 rounded-2xl border border-viatix-line bg-white p-4">
+      {!needsEvaluation && <div className="mt-4 rounded-2xl border border-border-subtle bg-white p-4">
         {state.applied ? <button type="button" className="button-primary min-h-11 w-full sm:w-auto" onClick={() => onApplication(offerId)}>Otevřít přihlášku</button> : <button type="button" disabled={busy} className="button-primary min-h-11 w-full sm:w-auto" onClick={() => change('applied')}><Check className="h-4 w-4" />Označit jako odeslanou přihlášku</button>}
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">Přihlášku odešleš na stránce zaměstnavatele. Tady si její odeslání pouze zaznamenáš.</p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">Přihlášku odešleš na stránce zaměstnavatele. Tady si její odeslání pouze zaznamenáš.</p>
       </div>}
       {needsEvaluation && state.applied && <button type="button" className="button-secondary mt-3 min-h-11 w-full sm:w-auto" onClick={() => onApplication(offerId)}>Otevřít přihlášku</button>}
 
@@ -100,30 +100,30 @@ export default function OfferDetail({ profileId, offerId, onClose, onStateChange
       <OfferInterest profileId={profileId} offerId={offerId} interest={detail.interest} onSaved={interest => { setDetail(previous => ({ ...previous, interest, state: { ...previous.state, priority: interest.priority } })); onChanged(); }} />
 
       {evaluation && <div className="mt-8 space-y-7">
-        <section aria-labelledby="fit-title"><h2 id="fit-title" className="font-display text-xl font-semibold">Proč se nabídka hodí</h2><ul className="mt-3 space-y-3 text-sm leading-relaxed">{evaluation.fit_reasons.slice(0, 3).map((reason, index) => <li key={index} className="flex gap-3"><Check className="mt-0.5 h-4 w-4 shrink-0 text-viatix-teal" aria-hidden="true" /><span>{reason}</span></li>)}</ul></section>
-        {!!evaluation.gap_analysis.length && <section aria-labelledby="questions-title" className="rounded-2xl bg-viatix-amber/10 p-5"><h2 id="questions-title" className="font-display text-lg font-semibold">Co ověřit na pohovoru</h2><p className="mt-1 text-sm leading-relaxed text-muted-foreground">Tato témata ti pomohou získat před rozhodnutím jasnější odpovědi.</p><ul className="mt-3 space-y-3 text-sm leading-relaxed">{evaluation.gap_analysis.map((gap, index) => <li key={index} className="flex gap-3"><span className="font-semibold text-[#9a4b12]">{index + 1}.</span><span>{gap}</span></li>)}</ul></section>}
-        <section aria-labelledby="salary-title" className="rounded-2xl border border-viatix-line bg-white p-5"><h2 id="salary-title" className="font-display text-lg font-semibold">Mzda a podmínky</h2><p className="mt-3 text-sm leading-relaxed">{evaluation.salary_assessment === 'ODPOVÍDÁ' ? 'Uvedená mzda odpovídá nastavenému běžnému minimu.' : evaluation.salary_assessment === 'POD_LIMITEM' ? 'Uvedená mzda je pod běžným minimem v profilu.' : evaluation.salary_stated ? 'Mzda je v inzerátu uvedená, ale nelze ji spolehlivě převést na měsíční hrubou částku v Kč.' : 'Inzerát mzdu neuvádí.'}</p>
-          {(evaluation.salary_min_czk != null || evaluation.salary_max_czk != null) && <p className="mt-2 text-sm font-semibold text-viatix-ink">{monthlySalary(evaluation.salary_min_czk) || 'Částka neuvedena'}{evaluation.salary_max_czk != null ? ' až ' + monthlySalary(evaluation.salary_max_czk) : ''}</p>}
-          {detail.application?.salaryExpectation && <p className="mt-3 text-sm leading-relaxed text-muted-foreground">Tvoje očekávání sdělené firmě: <span className="font-medium text-viatix-ink">{detail.application.salaryExpectation}</span></p>}
-          {detail.offer.salary_raw && <p className="mt-3 border-t border-viatix-line pt-3 text-sm leading-relaxed text-muted-foreground">Podmínky uvedené v inzerátu: {detail.offer.salary_raw}</p>}
+        <section aria-labelledby="fit-title"><h2 id="fit-title" className="font-display text-xl font-semibold">Proč se nabídka hodí</h2><ul className="mt-3 space-y-3 text-sm leading-relaxed">{evaluation.fit_reasons.slice(0, 3).map((reason, index) => <li key={index} className="flex gap-3"><Check className="mt-0.5 h-4 w-4 shrink-0 text-brand" aria-hidden="true" /><span>{reason}</span></li>)}</ul></section>
+        {!!evaluation.gap_analysis.length && <section aria-labelledby="questions-title" className="rounded-2xl bg-fit-potential-bg text-fit-potential-text p-5"><h2 id="questions-title" className="font-display text-lg font-semibold">Co ověřit na pohovoru</h2><p className="mt-1 text-sm leading-relaxed text-ink-secondary">Tato témata ti pomohou získat před rozhodnutím jasnější odpovědi.</p><ul className="mt-3 space-y-3 text-sm leading-relaxed">{evaluation.gap_analysis.map((gap, index) => <li key={index} className="flex gap-3"><span className="font-semibold text-fit-potential-text">{index + 1}.</span><span>{gap}</span></li>)}</ul></section>}
+        <section aria-labelledby="salary-title" className="rounded-2xl border border-border-subtle bg-white p-5"><h2 id="salary-title" className="font-display text-lg font-semibold">Mzda a podmínky</h2><p className="mt-3 text-sm leading-relaxed">{evaluation.salary_assessment === 'ODPOVÍDÁ' ? 'Uvedená mzda odpovídá nastavenému běžnému minimu.' : evaluation.salary_assessment === 'POD_LIMITEM' ? 'Uvedená mzda je pod běžným minimem v profilu.' : evaluation.salary_stated ? 'Mzda je v inzerátu uvedená, ale nelze ji spolehlivě převést na měsíční hrubou částku v Kč.' : 'Inzerát mzdu neuvádí.'}</p>
+          {(evaluation.salary_min_czk != null || evaluation.salary_max_czk != null) && <p className="mt-2 text-sm font-semibold text-ink">{monthlySalary(evaluation.salary_min_czk) || 'Částka neuvedena'}{evaluation.salary_max_czk != null ? ' až ' + monthlySalary(evaluation.salary_max_czk) : ''}</p>}
+          {detail.application?.salaryExpectation && <p className="mt-3 text-sm leading-relaxed text-ink-secondary">Tvoje očekávání sdělené firmě: <span className="font-medium text-ink">{detail.application.salaryExpectation}</span></p>}
+          {detail.offer.salary_raw && <p className="mt-3 border-t border-border-subtle pt-3 text-sm leading-relaxed text-ink-secondary">Podmínky uvedené v inzerátu: {detail.offer.salary_raw}</p>}
         </section>
-        {!!evaluation.tailored_cv_highlights.length && <details className="rounded-2xl border border-viatix-line bg-white p-4"><summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-viatix-teal">Podklady k životopisu</summary><ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed">{evaluation.tailored_cv_highlights.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
+        {!!evaluation.tailored_cv_highlights.length && <details className="rounded-2xl border border-border-subtle bg-white p-4"><summary className="min-h-11 cursor-pointer py-2 text-sm font-semibold text-brand">Podklady k životopisu</summary><ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-relaxed">{evaluation.tailored_cv_highlights.map((item, index) => <li key={index}>{item}</li>)}</ul></details>}
       </div>}
 
-      <details className="mt-7 rounded-2xl border border-viatix-line bg-white p-4">
-        <summary className="min-h-11 cursor-pointer py-2 font-semibold text-viatix-teal">Zobrazit původní znění inzerátu</summary>
+      <details className="mt-7 rounded-2xl border border-border-subtle bg-white p-4">
+        <summary className="min-h-11 cursor-pointer py-2 font-semibold text-brand">Zobrazit původní znění inzerátu</summary>
         <OfferText key={offerId + ':' + detail.offerRevision} profileId={profileId} offerId={offerId} text={detail.offer.raw_description} translation={detail.translation} />
-        {!!sources.length && <div className="mt-5 flex flex-wrap gap-3">{sources.map(source => <a key={source.portal} href={source.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-sm font-medium text-viatix-teal">{source.portal} ↗</a>)}</div>}
-        <p className="mt-4 text-sm leading-relaxed text-muted-foreground">Zveřejněno: {formatDate(detail.offer.published_at)} · Dostupnost inzerátu ověř na původním portálu.</p>
+        {!!sources.length && <div className="mt-5 flex flex-wrap gap-3">{sources.map(source => <a key={source.portal} href={source.url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center text-sm font-medium text-brand">{source.portal} ↗</a>)}</div>}
+        <p className="mt-4 text-sm leading-relaxed text-ink-secondary">Zveřejněno: {formatDate(detail.offer.published_at)} · Dostupnost inzerátu ověř na původním portálu.</p>
       </details>
 
-      <details className="mt-4 rounded-2xl border border-viatix-line p-4">
-        <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-muted-foreground">Další možnosti</summary>
+      <details className="mt-4 rounded-2xl border border-border-subtle p-4">
+        <summary className="min-h-11 cursor-pointer py-2 text-sm font-medium text-ink-secondary">Další možnosti</summary>
         <div className="mt-3"><h2 className="font-semibold">Upravit nabídku</h2><OfferEditor profileId={profileId} offerId={offerId} initialDetail={detail} onSaved={result => { setDetail(previous => ({ ...previous, ...result })); onChanged(); }} /></div>
-        <button type="button" disabled={busy} onClick={() => change('hidden')} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-viatix-teal/5"><EyeOff className="h-4 w-4" />{state.hidden ? 'Zobrazit nabídku znovu' : 'Skrýt nabídku'}</button>
-        {!deleteConfirm ? <button type="button" disabled={busy || deleting} onClick={() => setDeleteConfirm(true)} className="mt-3 flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-700"><Trash2 className="h-4 w-4" />Smazat nabídku natrvalo</button> : <div role="alertdialog" aria-label="Potvrzení smazání nabídky" className="mt-3 rounded-xl border border-red-200 bg-red-50 p-4">
-          <p className="text-sm font-semibold text-red-900">Opravdu chceš nabídku smazat?</p><p className="mt-1 text-sm leading-relaxed text-red-800">Odstraní se také hodnocení AI, poznámky, historie reakcí i uložený text. Tuto akci nelze vrátit.</p>
-          <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={deleting} onClick={() => setDeleteConfirm(false)} className="button-secondary min-h-11">Zrušit</button><button type="button" disabled={deleting} onClick={removeOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-60">{deleting && <Loader2 className="h-4 w-4 animate-spin" />}{deleting ? 'Mažu nabídku…' : 'Ano, smazat natrvalo'}</button></div>
+        <button type="button" disabled={busy} onClick={() => change('hidden')} className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-ink-secondary transition-colors hover:bg-surface-subtle"><EyeOff className="h-4 w-4" />{state.hidden ? 'Zobrazit nabídku znovu' : 'Skrýt nabídku'}</button>
+        {!deleteConfirm ? <button type="button" disabled={busy || deleting} onClick={() => setDeleteConfirm(true)} className="mt-3 flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm text-ink-secondary transition-colors hover:bg-danger-bg hover:text-danger"><Trash2 className="h-4 w-4" />Smazat nabídku natrvalo</button> : <div role="alertdialog" aria-label="Potvrzení smazání nabídky" className="mt-3 rounded-xl border border-border-subtle bg-danger-bg p-4">
+          <p className="text-sm font-semibold text-danger">Opravdu chceš nabídku smazat?</p><p className="mt-1 text-sm leading-relaxed text-danger">Odstraní se také hodnocení AI, poznámky, historie reakcí i uložený text. Tuto akci nelze vrátit.</p>
+          <div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={deleting} onClick={() => setDeleteConfirm(false)} className="button-secondary min-h-11">Zrušit</button><button type="button" disabled={deleting} onClick={removeOffer} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-danger px-4 text-sm font-semibold text-white hover:bg-danger-hover disabled:opacity-60">{deleting && <Loader2 className="h-4 w-4 animate-spin" />}{deleting ? 'Mažu nabídku…' : 'Ano, smazat natrvalo'}</button></div>
         </div>}
       </details>
     </div>}
