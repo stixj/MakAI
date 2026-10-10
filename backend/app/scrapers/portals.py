@@ -126,6 +126,10 @@ class HtmlJobScraper(BaseScraper):
                                     offers.append(offer)
                         next_link = soup.select_one('a[rel~="next"][href]')
                         if next_link is None:
+                            next_link = next((anchor for anchor in soup.select("a[href]")
+                                              if re.search(r"(?:dal(?:\u0161|s)\w*\s+nab\w*|next|na(?:dal\u0161|dal\u0161)\w*)",
+                                                           anchor.get_text(" ", strip=True), re.I)), None)
+                        if next_link is None:
                             break
                         listing_url = urljoin(listing_url, next_link["href"])
         except httpx.HTTPError as exc:

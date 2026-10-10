@@ -1,6 +1,7 @@
 """JSON bridge for the loopback-only Vite API. No credentials in stdout."""
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from app.config import get_settings
 from app.hunt_filters import HuntSelection
@@ -15,7 +16,7 @@ from app.profile_registry import (cv_document_payload, delete_cv_document, get_p
 from app.scrapers import SCRAPERS, DEFAULT_PORTALS
 from app.scrapers.base import ScraperError
 from app.scrapers.startupjobs import fetch_startupjobs
-from app.search_plan import startup_searches, jobs_listing_urls
+from app.search_plan import startup_searches, portal_listing_urls
 from app.storage import JsonEvaluationStore, create_store
 from app.turso import TursoEvaluationStore
 
@@ -59,39 +60,63 @@ def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
         known_urls = {offer["url"] for offer in known}
         known_urls.update(source["url"] for offer in known for source in offer.get("sources", []))
         known_ids = {offer.get("canonical_id") for offer in known if offer.get("canonical_id")}
-    selection = HuntSelection(payload.get("period", "all"), payload.get("includeUnknownDates", False),
-                              known_urls=known_urls, known_ids=known_ids, now=selection.now)
-    offers, errors, sources = [], [], []
-    for portal in dict.fromkeys(portals):
+    period, include_unknown = payload.get("period", "all"), payload.get("includeUnknownDates", False)
+    selection = HuntSelection(period, include_unknown, known_urls=known_urls, known_ids=known_ids, now=selection.now)
+    portal_list = list(dict.fromkeys(portals))
+
+    def scan_portal(portal):
+        source_selection = HuntSelection(period, include_unknown, known_urls=known_urls,
+                                         known_ids=known_ids, now=selection.now)
+        scraper = None
         try:
-            selection.counts.clear()
-            scraper = None
             if portal == "startupjobs":
                 found = fetch_startupjobs(limit, searches=startup_searches(profile),
-                                          accept_offer=selection.accept, skip_urls=selection.known_urls,
-                                          on_offer=on_offer)
-            elif portal == "jobs":
-                scraper = SCRAPERS[portal](listing_urls=jobs_listing_urls(profile))
-                found = scraper.fetch_jobs(limit, accept_offer=selection.accept, skip_urls=selection.known_urls,
-                                           on_offer=on_offer)
+                                          accept_offer=source_selection.accept, skip_urls=known_urls)
             else:
-                scraper = SCRAPERS[portal]()
-                found = scraper.fetch_jobs(limit, accept_offer=selection.accept, skip_urls=selection.known_urls,
-                                           on_offer=on_offer)
-            offers.extend(found)
+                scraper = SCRAPERS[portal](listing_urls=portal_listing_urls(portal))
+                found = scraper.fetch_jobs(limit, accept_offer=source_selection.accept, skip_urls=known_urls)
             stats = getattr(scraper, "stats", {}) if scraper is not None else {}
             stats = stats if isinstance(stats, dict) else {}
-            sources.append({"portal": SCRAPERS[portal].portal, "found": len(found), "status": "done",
-                            **dict(selection.counts), **stats})
+            return portal, found, source_selection.known_matches, {
+                "portal": SCRAPERS[portal].portal, "found": len(found), "status": "done",
+                **dict(source_selection.counts), **stats,
+            }, None
         except ScraperError as exc:
-            errors.append(str(exc))
-            sources.append({"portal": SCRAPERS[portal].portal, "found": 0, "status": "error", "error": str(exc)})
+            return portal, [], source_selection.known_matches, {
+                "portal": SCRAPERS[portal].portal, "found": 0, "status": "error", "error": str(exc),
+            }, str(exc)
+        except Exception as exc:
+            error = f"{SCRAPERS[portal].portal}: hledání selhalo ({type(exc).__name__})."
+            return portal, [], source_selection.known_matches, {
+                "portal": SCRAPERS[portal].portal, "found": 0, "status": "error", "error": error,
+            }, error
+
+    # Portal HTTP work is independent, but cap parallelism to stay polite to sources.
+    scanned = {}
+    with ThreadPoolExecutor(max_workers=min(3, len(portal_list))) as executor:
+        futures = [executor.submit(scan_portal, portal) for portal in portal_list]
+        for future in as_completed(futures):
+            portal, found, known_matches, source, error = future.result()
+            scanned[portal] = (found, known_matches, source, error)
+
+    offers, errors, sources, known_matches = [], [], [], []
+    for portal in portal_list:
+        found, portal_known_matches, source, error = scanned[portal]
+        # Persist discovery checkpoints serially; the database adapter and its
+        # per-run dedupe callback are intentionally not shared between threads.
+        for offer in found:
+            on_offer(offer)
+        offers.extend(found)
+        known_matches.extend(portal_known_matches)
+        sources.append(source)
+        if error:
+            errors.append(error)
     # Keep local history and avoid repeated paid evaluations for the same candidate.
     previous_urls = {json.loads(row["offer"])["url"] for row in previous}
     if remote:
         from app.scrapers.structured import clean_url
         clean_manual_urls = {clean_url(url) for url in manual_urls}
-        for offer in selection.known_matches:
+        for offer in known_matches:
             if offer.canonical_id in manual_ids or clean_url(str(offer.url)) in clean_manual_urls:
                 continue
             store.upsert_or_enrich_job(offer)

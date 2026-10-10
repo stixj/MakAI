@@ -62,7 +62,7 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false, onDi
     <summary className="cursor-pointer py-1 text-sm font-medium text-brand">Nastavení hledání a automatizace</summary>
     <section aria-labelledby="schedule-title" className="mt-3 rounded-xl border border-border-subtle bg-surface p-4">
     <div className="flex items-center gap-3"><CalendarClock className="h-5 w-5 text-brand" aria-hidden="true" /><h3 id="schedule-title" className="font-display text-lg font-semibold">Automatické hledání</h3></div>
-    <p className="mt-2 text-sm text-ink-secondary">Nastav, kdy pro tebe hledat. Tvůj počítač může být vypnutý.</p>
+    <p className="mt-2 text-sm text-ink-secondary">Hledání začíná na portálech v Brně a okolí do 10 km; plný úvazek se zapne tam, kde portál filtr nabízí. Nové nabídky z posledních 24 hodin pak posoudí MakAI podle tvého profilu.</p>
     {!draft ? <div className="mt-4"><p role="status" className="text-sm">{error ? 'Nastavení se nepodařilo načíst.' : 'Načítám plán…'}</p>{error && <button className="button-secondary mt-3" onClick={load}>Načíst znovu</button>}</div> : <form onSubmit={event => save(event)}>
       <fieldset disabled={busy} className="mt-5 space-y-5">
         <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={draft.enabled} disabled={!hasProfile} onChange={event => change('enabled', event.target.checked)} className="h-5 w-5 accent-brand" />Zapnout automatické hledání</label>
@@ -83,7 +83,7 @@ export default function SchedulePanel({ hasProfile, profileUpdated = false, onDi
           <label className="text-sm">Nejvýše AI hodnocení za běh<input type="number" min="1" max="100" value={draft.maxEvaluations} onChange={event => change('maxEvaluations', Number(event.target.value))} className={input} /></label>
           <label className="text-sm">Nejvýše spuštění za den<input type="number" min="1" max="24" value={draft.maxDailyRuns} onChange={event => change('maxDailyRuns', Number(event.target.value))} className={input} /></label>
         </div>
-        <p className="text-xs leading-relaxed text-ink-secondary">Denní limit zahrnuje automatická i ruční hledání. AI limit omezuje počet nových nabídek odeslaných k hodnocení, nikoli cenu v Kč. Uložené nabídky se znovu nehodnotí.</p>
+        <p className="text-xs leading-relaxed text-ink-secondary">Denní limit zahrnuje automatická i ruční hledání. Jedno hledání projde nejvýše 100 nových nabídek z každého portálu a odešle až 100 nabídek k AI hodnocení. Uložené nabídky se znovu nehodnotí; neověřitelná data zveřejnění se při výchozím nastavení ponechají.</p>
           <label className="mt-3 block text-xs">Časové pásmo<select value={draft.timezone} onChange={event => change('timezone', event.target.value)} className="ml-3 rounded-xl border border-border-subtle bg-surface px-3 py-2"><option value="Europe/Prague">Český čas (letní i zimní)</option><option value="UTC">UTC</option></select></label>
         {draft.period !== 'all' && <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={draft.includeUnknownDates} onChange={event => change('includeUnknownDates', event.target.checked)} className="mt-0.5 accent-brand" />Zahrnout i inzeráty bez ověřitelného data zveřejnění</label>}
           </div>

@@ -270,7 +270,21 @@ export class CloudStore {
   }
   async getSchedule() {
     const row = await this.control();
-    return { ...JSON.parse(row.schedule), nextAt: row.next_at, revision: Number(row.revision), workerSeenAt: row.worker_seen_at };
+    const schedule = JSON.parse(row.schedule);
+    // Upgrade untouched legacy defaults so today's manual searches do not stop
+    // after five scraped offers and twenty paid AI evaluations.
+    let revision = Number(row.revision);
+    if (schedule.limit === 5 && schedule.maxEvaluations === 20) {
+      schedule.limit = 100;
+      schedule.maxEvaluations = 100;
+      schedule.includeUnknownDates = true;
+      const saved = await this.client.execute({
+        sql: 'UPDATE makai_control SET schedule=?, revision=revision+1 WHERE id=1 AND revision=?',
+        args: [json(schedule), revision],
+      });
+      if (Number(saved.rowsAffected) === 1) revision += 1;
+    }
+    return { ...schedule, nextAt: row.next_at, revision, workerSeenAt: row.worker_seen_at };
   }
   async saveSchedule(input) {
     const schedule = validateSchedule(input);

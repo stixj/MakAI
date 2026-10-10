@@ -15,7 +15,7 @@ if __package__:
     from .app.hunt_filters import HuntSelection
     from .app.ingestion import discovery_callback
     from .app.profile import load_candidate_profile
-    from .app.search_plan import startup_searches, jobs_listing_urls
+    from .app.search_plan import startup_searches, portal_listing_urls
     from .app.scrapers import SCRAPERS, DEFAULT_PORTALS
     from .app.scrapers.startupjobs import ScraperError, fetch_startupjobs
     from .app.storage import create_store
@@ -26,7 +26,7 @@ else:
     from app.hunt_filters import HuntSelection
     from app.ingestion import discovery_callback
     from app.profile import load_candidate_profile
-    from app.search_plan import startup_searches, jobs_listing_urls
+    from app.search_plan import startup_searches, portal_listing_urls
     from app.scrapers import SCRAPERS, DEFAULT_PORTALS
     from app.scrapers.startupjobs import ScraperError, fetch_startupjobs
     from app.storage import create_store
@@ -67,11 +67,9 @@ def main(argv: list[str] | None = None) -> int:
                 found = (fetch_startupjobs(args.limit, searches=startup_searches(profile),
                                            accept_offer=selection.accept, skip_urls=selection.known_urls,
                                            on_offer=on_offer) if portal == "startupjobs"
-                         else SCRAPERS[portal](listing_urls=jobs_listing_urls(profile)).fetch_jobs(
+                         else SCRAPERS[portal](listing_urls=portal_listing_urls(portal)).fetch_jobs(
                              args.limit, accept_offer=selection.accept, skip_urls=selection.known_urls,
-                             on_offer=on_offer) if portal == "jobs"
-                         else SCRAPERS[portal]().fetch_jobs(args.limit, accept_offer=selection.accept,
-                                                          skip_urls=selection.known_urls, on_offer=on_offer))
+                             on_offer=on_offer))
                 offers.extend(found)
                 console.print(Text(f"{portal}: {len(found)} nabídek."))
             except ScraperError as exc:

@@ -4,12 +4,12 @@ export const PORTALS = {
 };
 export const DEFAULT_SCHEDULE = {
   enabled: false, timezone: 'Europe/Prague', days: [1, 2, 3, 4, 5], times: ['05:30'],
-  limit: 5, maxEvaluations: 20, maxDailyRuns: 3, period: '24h', includeUnknownDates: false,
+  limit: 100, maxEvaluations: 100, maxDailyRuns: 3, period: '24h', includeUnknownDates: true,
   portals: Object.keys(PORTALS).filter(key => key !== 'startupjobs'),
 };
 
 export function validateHunt(input) {
-  const { limit = 5, maxEvaluations = 20, period = '24h', includeUnknownDates = false,
+  const { limit = 100, maxEvaluations = 100, period = '24h', includeUnknownDates = true,
     portals = DEFAULT_SCHEDULE.portals } = input ?? {};
   if (!Number.isInteger(limit) || limit < 1 || limit > 100 ||
       !Number.isInteger(maxEvaluations) || maxEvaluations < 1 || maxEvaluations > 100 ||
