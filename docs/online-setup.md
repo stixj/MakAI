@@ -26,9 +26,15 @@ Set these Vercel **production server secrets**, without any `VITE_` prefix:
 | `PROFILE_GEMINI_MODEL` (optional) | Dedicated profile model; this deployment uses `gemini-3.1-flash-lite` |
 | `PROFILE_LLM_PROVIDER` (optional) | `gemini`, `openai`, or `auto` |
 | `OPENAI_MODEL` (optional) | Uses the existing backend default `gpt-4o-mini` if absent |
-| `MAKAI_GITHUB_TOKEN` (optional) | Fine-grained token for **only this repository**, Actions write, for immediate manual workflow dispatch |
+| `MAKAI_GITHUB_TOKEN` | Fine-grained token for **only this repository**, Actions read/write; required to start a manual search immediately when the user clicks the button |
 
-The build command `npm run build:cloud` selects server API mode. Do not configure
+The build command `npm run build:cloud` selects server API mode. Add `MAKAI_GITHUB_TOKEN`
+to the Vercel **Production** environment and redeploy. Without it, a manual search is
+saved to the queue but waits for the scheduled worker check, so the button does not
+start processing immediately. Create a fine-grained token scoped to `stixj/MakAI`
+with Actions read/write permission; never put it in a `VITE_*` variable.
+
+Do not configure
 `VITE_TURSO_AUTH_TOKEN` or any other browser credential. Rotating the session secret
 invalidates existing sessions. The personal password is a single-owner login,
 not a multi-user account system.

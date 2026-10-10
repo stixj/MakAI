@@ -99,6 +99,15 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
     finally { setBusy(false); }
   }
 
+  async function dispatchQueuedHunt() {
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const state = await api('/api/hunt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'dispatch' }) });
+      setHunt(state); setNotice(state.notice || '');
+    } catch (failure) { setError(failure.message); }
+    finally { setBusy(false); }
+  }
+
   async function stopHunt() {
     setStopping(true); setError('');
     try { setHunt(await api('/api/hunt', { method: 'DELETE' })); }
@@ -115,8 +124,9 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
 
   if (compact && profile) return <section aria-label="Aktivní profil a hledání" className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-surface-subtle px-4 py-3">
     <button type="button" onClick={onManage} className="min-h-11 min-w-0 flex-1 text-left"><span className="block text-xs text-ink-secondary">Hledáme podle profilu</span><span className="block truncate text-sm font-semibold text-brand">{profile.name}</span></button>
-    <div className="mr-[-1rem] flex flex-wrap items-center gap-2"><button type="button" className="button-primary px-3 sm:px-5" aria-label="Hledat nové nabídky" disabled={busy || running || building || scheduleDirty} onClick={() => startHunt()}><Search className="h-4 w-4" /><span className="sm:hidden">{running ? 'Hledám…' : 'Hledat'}</span><span className="hidden sm:inline">{running ? hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…' : 'Hledat nové nabídky'}</span></button>{running && <button type="button" className="button-secondary" disabled={stopping || hunt.status === 'stopping'} onClick={stopHunt}>Zastavit</button>}</div>
+    <div className="mr-[-1rem] flex flex-wrap items-center gap-2"><button type="button" className="button-primary px-3 sm:px-5" aria-label="Hledat nové nabídky" disabled={busy || running || building || scheduleDirty} onClick={() => startHunt()}><Search className="h-4 w-4" /><span className="sm:hidden">{running ? 'Hledám…' : 'Hledat'}</span><span className="hidden sm:inline">{running ? hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…' : 'Hledat nové nabídky'}</span></button>{cloud && hunt.status === 'queued' && <button type="button" className="button-secondary" disabled={busy} onClick={dispatchQueuedHunt}>Spustit nyní</button>}{running && <button type="button" className="button-secondary" disabled={stopping || hunt.status === 'stopping'} onClick={stopHunt}>Zastavit</button>}</div>
     {running && <p role="status" className="w-full text-xs text-ink-secondary">{cloud ? 'Stránku můžeš zavřít. Výsledky se uloží do přehledu.' : 'Hledání běží na tomto počítači.'}</p>}
+    {notice && <p role="status" className="w-full text-xs text-fit-potential-text">{notice}</p>}
     {scheduleDirty && <p className="w-full text-xs text-fit-potential-text">Nejdřív ulož změny v sekci Profil a hledání.</p>}
     {(error || hunt.error) && <p role="alert" className="w-full text-sm text-danger">{error || hunt.error}</p>}
     {hunt.status === 'blocked' && <p role="alert" className="w-full text-sm text-fit-potential-text">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení se zastavilo. Podrobnosti najdeš v Profil a hledání.'}</p>}
@@ -133,6 +143,7 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
           {running ? <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Search className="h-4 w-4" aria-hidden="true" />}
           {running ? (hunt.status === 'queued' ? 'Čeká na spuštění…' : 'Hledám nabídky…') : 'Hledat nové nabídky'}
         </button>
+        {cloud && hunt.status === 'queued' && <button type="button" onClick={dispatchQueuedHunt} disabled={busy} className="button-secondary">Spustit nyní</button>}
         {running && <button type="button" onClick={stopHunt} disabled={stopping || hunt.status === 'stopping'} className="button-secondary border-border-subtle text-danger"><Square className="h-4 w-4" aria-hidden="true" />{stopping || hunt.status === 'stopping' ? 'Zastavuji…' : 'Zastavit hledání'}</button>}
       </div>}
     </div>

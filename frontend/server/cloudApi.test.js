@@ -39,13 +39,17 @@ test('missing server configuration and SDK errors never expose secrets', async (
   assert.equal(broken.status, 503); assert.ok(!JSON.stringify(broken).includes('private-db'));
 });
 test('manual dispatch sends only a workflow ref, preserves queue when GitHub is unavailable', async () => {
-  assert.equal((await dispatchWorker({})).dispatch, 'scheduled');
+  const unconfigured = await dispatchWorker({});
+  assert.equal(unconfigured.dispatch, 'scheduled');
+  assert.match(unconfigured.notice, /MAKAI_GITHUB_TOKEN/);
   let seen;
   const dispatched = await dispatchWorker({ MAKAI_GITHUB_TOKEN: 'private-token' }, async (url, options) => { seen = { url, options }; return { ok: true }; });
   assert.equal(dispatched.dispatch, 'requested');
   assert.deepEqual(JSON.parse(seen.options.body), { ref: 'main' });
   assert.ok(!seen.options.body.includes('profile'));
-  assert.equal((await dispatchWorker({ MAKAI_GITHUB_TOKEN: 'private-token' }, async () => { throw new Error(); })).dispatch, 'scheduled');
+  const failed = await dispatchWorker({ MAKAI_GITHUB_TOKEN: 'private-token' }, async () => { throw new Error(); });
+  assert.equal(failed.dispatch, 'scheduled');
+  assert.match(failed.notice, /Actions: write/);
 });
 test('profile parser preserves context and rejects invalid salary, SQL ids and personal CV injection', async () => {
   const raw = await readFile(new URL('../public/templates/candidate-profile-template.json', import.meta.url), 'utf8');
@@ -75,6 +79,15 @@ test('real API login, profile, plan, manual queue and worker result flow use onl
   const start = await invoke('hunt', { method: 'POST', headers: authHeaders, body: { ...schedule.body, profileId: upload.body.id } }, options);
   assert.equal(start.status, 202);
   assert.equal(start.body.dispatch, 'scheduled');
+  let dispatchRequest;
+  const retry = await invoke('hunt', { method: 'POST', headers: authHeaders, body: { action: 'dispatch' } }, {
+    ...options, env: { ...env, MAKAI_GITHUB_TOKEN: 'private-token' },
+    fetcher: async (url, request) => { dispatchRequest = { url, request }; return { ok: true }; },
+  });
+  assert.equal(retry.status, 202);
+  assert.equal(retry.body.id, start.body.id);
+  assert.equal(retry.body.dispatch, 'requested');
+  assert.deepEqual(JSON.parse(dispatchRequest.request.body), { ref: 'main' });
   const workerHeaders = { authorization: `Bearer ${env.MAKAI_WORKER_SECRET}`, 'content-type': 'application/json' };
   const claim = await invoke('worker', { method: 'POST', headers: workerHeaders, body: { action: 'claim' } }, options);
   assert.equal(claim.status, 200);

@@ -26,7 +26,7 @@ export async function readBody(request, maxBytes = 300000) {
 }
 
 export async function dispatchWorker(env, fetcher = fetch) {
-  if (!env.MAKAI_GITHUB_TOKEN) return { dispatch: 'scheduled', notice: 'Hledání čeká na nejbližší kontrolu plánovače (obvykle do 15 minut).' };
+  if (!env.MAKAI_GITHUB_TOKEN) return { dispatch: 'scheduled', notice: 'Okamžité spuštění není nakonfigurované. Přidej MAKAI_GITHUB_TOKEN do produkčního prostředí Vercelu; do té doby hledání převezme plánovaný worker.' };
   const repository = env.MAKAI_GITHUB_REPOSITORY || 'stixj/MakAI';
   if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) throw new Error('Invalid repository');
   try {
@@ -38,7 +38,7 @@ export async function dispatchWorker(env, fetcher = fetch) {
     if (!response.ok) throw new Error();
     return { dispatch: 'requested', notice: 'Hledání je ve frontě. Zpracování se spustí, jakmile GitHub přidělí pracovníka.' };
   } catch {
-    return { dispatch: 'scheduled', notice: 'Okamžité spuštění pracovníka se nepodařilo. Hledání zůstává ve frontě pro plánovač.' };
+    return { dispatch: 'scheduled', notice: 'Okamžité spuštění pracovníka se nepodařilo. Zkontroluj MAKAI_GITHUB_TOKEN a oprávnění Actions: write; hledání zůstává ve frontě.' };
   }
 }
 
@@ -143,7 +143,13 @@ export function createCloudHandler(route, { env = process.env, clientFactory = c
         if (request.method === 'GET') { const runs = await store.runs(); return send(200, { ...(runs[0] || { status: 'idle' }), runs }); }
         if (request.method === 'DELETE') return send(200, await store.stop());
         if (request.method === 'POST') {
-          const run = await store.manual(await readBody(request));
+          const payload = await readBody(request);
+          if (payload.action === 'dispatch') {
+            const run = (await store.runs()).find(item => item.status === 'queued');
+            if (!run) throw new UserError('Ve frontě není žádné čekající hledání.', 409);
+            return send(202, { ...run, ...await dispatchWorker(env, fetcher) });
+          }
+          const run = await store.manual(payload);
           return send(202, { ...run, ...await dispatchWorker(env, fetcher) });
         }
         return send(405, { error: 'Nepodporovaná metoda.' });
