@@ -111,7 +111,7 @@ test('UI toggles priority, saves motivation, switches translated/original text a
   await act(async()=>button('Označit jako prioritu').props.onClick());assert.equal((await applicationDetail(store,profileId,offerId)).interest.priority,true);
   act(()=>field('Můj důvod','textarea').props.onChange({target:{value:'Chci pracovat na produktu'}}));
   await act(async()=>button('Uložit důvod').props.onClick());assert.equal((await applicationDetail(store,profileId,offerId)).interest.reason,'Chci pracovat na produktu');
-  act(()=>button('Celý inzerát').props.onClick());await act(async()=>button('Přeložit do češtiny').props.onClick());assert.ok(text(renderer.toJSON()).includes('Práce na dálku.'));assert.equal(aiCalls,1);
+  await act(async()=>button('Přeložit do češtiny').props.onClick());assert.ok(text(renderer.toJSON()).includes('Práce na dálku.'));assert.equal(aiCalls,1);
   act(()=>button('Originál').props.onClick());assert.ok(text(renderer.toJSON()).includes(offer.raw_description));await act(async()=>button('Česky').props.onClick());assert.equal(aiCalls,1);
   act(()=>renderer.unmount());await store.updateJobState({profileId,offerId,changes:{applied:true}});
   const {default:Detail}=await server.ssrLoadModule('/src/components/ApplicationDetail.jsx');

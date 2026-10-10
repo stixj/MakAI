@@ -163,11 +163,15 @@
   body { margin: 0; min-width: 320px; }
   #root { min-height: 100vh; }
   ::selection { background: var(--viatix-mint-soft); color: var(--viatix-ink); }
+  button, summary { min-width: 44px; min-height: 44px; }
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: max(14px, 1em); }
+  input:not([type="checkbox"]):not([type="radio"]), select { min-height: 44px; }
+  a.button-primary, a.button-secondary { min-height: 44px; }
 }
 
 @layer components {
-  .button-primary { @apply inline-flex items-center justify-center gap-2 rounded-2xl bg-viatix-teal px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#06474d] disabled:cursor-wait disabled:opacity-60; }
-  .button-secondary { @apply inline-flex items-center justify-center gap-2 rounded-2xl border border-viatix-line bg-viatix-sand2 px-4 py-2.5 text-sm font-medium text-viatix-teal transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60; }
+  .button-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-viatix-teal px-5 py-3 text-sm font-medium text-white transition-colors hover:bg-[#06474d] disabled:cursor-wait disabled:opacity-60; }
+  .button-secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-viatix-line bg-viatix-sand2 px-4 py-2.5 text-sm font-medium text-viatix-teal transition-colors hover:bg-white disabled:cursor-wait disabled:opacity-60; }
   .job-card { @apply flex flex-col overflow-hidden rounded-2xl border border-border/50 bg-card shadow-card transition-all duration-200; }
   .job-card:hover { @apply -translate-y-0.5 shadow-card-hover; }
 }
@@ -180,6 +184,16 @@
   .nav-tab { @apply relative min-h-12 flex-1 whitespace-nowrap px-3 py-3 text-center text-sm font-medium text-muted-foreground transition-colors hover:text-viatix-teal sm:flex-none sm:px-5; }
   .nav-tab-active { @apply text-viatix-teal; }
   .nav-tab-active::after { content: ''; @apply absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-viatix-teal; }
-  .filter-chip { @apply inline-flex min-h-10 items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-viatix-teal/5; }
+  .filter-chip { @apply inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-transparent px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-viatix-teal/5; }
   .filter-chip-active { @apply border-viatix-teal/20 bg-viatix-teal/10 font-medium text-viatix-teal; }
 }
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-reveal { animation: reveal 220ms ease-out both; }
+
+/* Keep touch targets consistent even when a component utility asks for less. */
+button, summary { min-width: 44px; min-height: 44px; }
+label:has(> input[type="checkbox"]), label:has(> input[type="radio"]) { min-height: 44px; }
