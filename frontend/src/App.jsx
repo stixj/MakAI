@@ -48,6 +48,7 @@ export function Dashboard({ accountControls }) {
   const currentProfile = useRef(null);
   const undoButton = useRef(null);
   const filtersPopover = useRef(null);
+  const appMenu = useRef(null);
   const [jobs, setJobs] = useState([]);
   const [status, setStatus] = useState(configured ? 'loading' : 'unconfigured');
   const [error, setError] = useState('');
@@ -76,9 +77,16 @@ export function Dashboard({ accountControls }) {
     const closeFiltersOutside = event => {
       const popover = filtersPopover.current;
       if (popover?.open && !popover.contains(event.target)) popover.open = false;
+      const menu = appMenu.current;
+      if (menu?.open && !menu.contains(event.target)) menu.open = false;
     };
     const closeFiltersOnEscape = event => {
-      if (event.key === 'Escape' && filtersPopover.current?.open) filtersPopover.current.open = false;
+      if (event.key !== 'Escape') return;
+      if (filtersPopover.current?.open) filtersPopover.current.open = false;
+      if (appMenu.current?.open) {
+        appMenu.current.open = false;
+        appMenu.current.querySelector('summary')?.focus();
+      }
     };
     document.addEventListener('pointerdown', closeFiltersOutside);
     document.addEventListener('keydown', closeFiltersOnEscape);
@@ -269,7 +277,7 @@ export function Dashboard({ accountControls }) {
   }
 
   function AppMenu() {
-    return <details className="relative" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
+    return <details ref={appMenu} className="relative" onKeyDown={event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); } }}>
       <summary aria-label="Otevřít menu" className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-xl border border-border-subtle bg-surface px-3 py-2 text-sm font-medium text-ink hover:bg-surface-subtle">
         <Menu className="h-5 w-5" aria-hidden="true" /><span>Menu</span>
       </summary>
