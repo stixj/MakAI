@@ -6,6 +6,7 @@ import { profileApi } from '../lib/profileApi.js';
 import { VERDICTS, formatDate, safeOfferUrl, getOfferSources } from '../lib/jobs.js';
 import { normalizeJobState } from '../lib/jobState.js';
 import OfferEditor from './OfferEditor.jsx';
+const monthlySalary = value => Number.isInteger(value) ? new Intl.NumberFormat('cs-CZ').format(value) + ' Kč/měsíc hrubého' : null;
 export default function OfferDetail({ profileId, offerId, onClose, onStateChange, onApplication, onChanged, reloadKey }) {
   const [detail, setDetail] = useState(null), [error, setError] = useState(''), [busy, setBusy] = useState(false), [notice, setNotice] = useState('');
   const [deleteConfirm,setDeleteConfirm]=useState(false),[deleting,setDeleting]=useState(false);
@@ -84,6 +85,7 @@ export default function OfferDetail({ profileId, offerId, onClose, onStateChange
               <p className="text-sm font-semibold text-viatix-teal">{detail.evaluationStale ? 'Previous match' : VERDICTS[detail.evaluation.verdict]?.label} ({detail.evaluation.verdict}) · {detail.evaluation.score}/100 ({detail.evaluation.score}%)</p>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">Skóre porovnává nabídku s profilem. Nevyjadřuje pravděpodobnost přijetí.</p>
               <h2 className="mt-7 font-semibold">Proč tato shoda</h2><ul className="mt-3 space-y-3 text-sm leading-relaxed">{detail.evaluation.fit_reasons.map((reason,i) => <li key={i} className="flex gap-2"><span className="text-viatix-teal">•</span>{reason}</li>)}</ul>
+              <div className="mt-6 rounded-2xl border border-viatix-line bg-white p-5"><h2 className="font-semibold">Mzdové zhodnocení</h2><p className="mt-2 text-sm">{detail.evaluation.salary_assessment === 'ODPOVÍDÁ' ? 'Uvedená mzda odpovídá nastavené hranici.' : detail.evaluation.salary_assessment === 'POD_LIMITEM' ? 'Uvedená mzda je pod standardním minimem v profilu.' : detail.evaluation.salary_stated ? 'Mzda je zmíněná, ale z inzerátu ji nelze spolehlivě převést na měsíční Kč.' : 'Inzerát mzdu neuvádí.'}</p>{(detail.evaluation.salary_min_czk != null || detail.evaluation.salary_max_czk != null) && <p className="mt-2 text-sm font-medium">{monthlySalary(detail.evaluation.salary_min_czk) || '—'}{detail.evaluation.salary_max_czk != null ? ' až ' + monthlySalary(detail.evaluation.salary_max_czk) : ''}</p>}</div>
               {!!detail.evaluation.gap_analysis.length && <div className="mt-6 rounded-2xl bg-viatix-amber/10 p-5"><h2 className="font-semibold">Co ověřit před dalším krokem</h2><ul className="mt-3 list-disc space-y-3 pl-4 text-sm leading-relaxed">{detail.evaluation.gap_analysis.map((gap,i) => <li key={i}>{gap}</li>)}</ul></div>}
               {!!detail.evaluation.tailored_cv_highlights.length && <><h2 className="mt-6 font-semibold">Podklady do životopisu</h2><ul className="mt-3 list-disc space-y-2 pl-4 text-sm">{detail.evaluation.tailored_cv_highlights.map((item,i) => <li key={i}>{item}</li>)}</ul></>}
             </> : <p className="text-sm leading-relaxed text-muted-foreground">Nabídka zatím nemá AI hodnocení. Můžeš ji prohlédnout a uložit i bez něj.</p>}

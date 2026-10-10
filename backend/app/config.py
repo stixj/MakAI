@@ -24,6 +24,7 @@ class Settings(BaseModel):
     allow_openai_fallback: bool = False
     llm_timeout_seconds: float = Field(default=30, ge=1, le=120)
     llm_max_output_tokens: int = Field(default=4096, ge=512, le=8192)
+    evaluation_max_output_tokens: int = Field(default=1200, ge=1000, le=1500)
     local_results_path: Path = PROJECT_ROOT / "data" / "results.json"
 
     @field_validator("gemini_api_key", "openai_api_key", "database_url", "turso_auth_token", mode="before")

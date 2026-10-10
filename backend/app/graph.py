@@ -34,7 +34,8 @@ def ingest(state: MakAIState) -> MakAIStateUpdate:
             "skipped_by_prefilter": [], "evaluation_index": 0, "evaluation_limit_reached": False}
 
 
-def filter_offers(state: MakAIState, profile: CandidateProfile = MASTER_PROFILE) -> MakAIStateUpdate:
+def filter_offers(state: MakAIState, profile: CandidateProfile = MASTER_PROFILE,
+                  store: EvaluationStore | None = None) -> MakAIStateUpdate:
     seen: set[str] = set()
     offers: list[JobOffer] = []
     errors = list(state["errors"])
@@ -47,6 +48,12 @@ def filter_offers(state: MakAIState, profile: CandidateProfile = MASTER_PROFILE)
     promising, rejected = filter_promising_offers(offers, profile)
     if rejected:
         logger.info("Předfiltr vyřadil %d nabídek podle lokality nebo názvu pozice.", len(rejected))
+        mark_filtered = getattr(store, "mark_filtered_jobs", None)
+        if mark_filtered is not None:
+            try:
+                mark_filtered([item["offer"] for item in rejected])
+            except Exception as exc:
+                errors.append(f"Prefilter checkpoint: {type(exc).__name__}.")
     return {"offers": promising, "errors": errors, "skipped_by_prefilter": rejected}
 
 
@@ -90,6 +97,9 @@ def build_graph(
                 if check_duplicate is not None and check_duplicate(url):
                     skipped.append(url)
                     continue
+                discover = getattr(active_store, "discover_job", None)
+                if discover is not None:
+                    discover(offer)
             except Exception as exc:
                 # A failed DB check must never trigger a speculative paid evaluation.
                 errors.append(f"Deduplikace {offer.id!r}: {type(exc).__name__}; evaluace přeskočena.")
@@ -151,7 +161,7 @@ def build_graph(
 
     builder = StateGraph(MakAIState)
     builder.add_node("ingest", ingest)
-    builder.add_node("filter", lambda state: filter_offers(state, active_profile))
+    builder.add_node("filter", lambda state: filter_offers(state, active_profile, active_store))
     builder.add_node("deduplicate", deduplicate)
     builder.add_node("evaluate", evaluate)
     builder.add_node("save", save)

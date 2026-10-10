@@ -36,7 +36,24 @@ class SelectionTests(unittest.TestCase):
         welder = self._raw_offer("Svářeč CO2", "Brno")
         accepted, rejected = filter_promising_offers([ostrava, welder], MASTER_PROFILE)
         self.assertEqual(accepted, [])
-        self.assertEqual(rejected, [ostrava, welder])
+        self.assertEqual([item["offer"] for item in rejected], [ostrava, welder])
+        self.assertEqual([item["reason"] for item in rejected],
+                         ["explicit_location_outside_preferences", "title_primary_non_target_role"])
+
+    def test_technical_role_whitelist_and_free_text_no_go_are_conservative(self):
+        technical = self._raw_offer("Python Developer pro účetní software", "Brno")
+        technical2 = self._raw_offer("Data Analyst – bankovnictví", "Brno")
+        ambiguous = self._raw_offer("Procesní analytik", "Jihomoravský kraj / Hybrid")
+        product = self._raw_offer("Product Owner účetní platformy", "ČR")
+        profile = MASTER_PROFILE.model_copy(update={"no_go_criteria": ("noční směny",)})
+        accepted, rejected = filter_promising_offers([technical, technical2, ambiguous, product], profile)
+        self.assertEqual(accepted, [technical, technical2, ambiguous, product])
+        self.assertEqual(rejected, [])
+
+    def test_rejection_has_a_machine_readable_reason(self):
+        offer = self._raw_offer("Hlavní účetní", "Brno")
+        _, rejected = filter_promising_offers([offer], MASTER_PROFILE)
+        self.assertEqual(rejected[0]["reason"], "title_primary_non_target_role")
 
     def test_rolling_windows_include_boundary_and_exclude_older_or_future(self):
         for period, hours in (("24h", 24), ("7d", 168), ("30d", 720)):
@@ -76,10 +93,13 @@ class SelectionTests(unittest.TestCase):
             return httpx.Response(200, text="".join(f'<a href="{url}">Pozice</a>' for url in urls))
         selection = HuntSelection("24h", known_urls=[urls[0]], now=self.now)
         client = httpx.Client
+        checkpointed = []
         with patch("backend.app.scrapers.portals.httpx.Client", side_effect=lambda **kw: client(transport=httpx.MockTransport(handler), **kw)):
             scraper = PraceCzScraper()
-            offers = scraper.fetch_jobs(1, accept_offer=selection.accept, skip_urls=selection.known_urls)
+            offers = scraper.fetch_jobs(1, accept_offer=selection.accept, skip_urls=selection.known_urls,
+                                        on_offer=lambda offer: checkpointed.append(offer))
         self.assertEqual([str(offer.url) for offer in offers], [urls[-1]])
+        self.assertEqual(checkpointed, offers)
         self.assertNotIn(urls[0], requests)
         self.assertEqual(selection.counts["outsidePeriod"], 2)
         self.assertEqual(scraper.stats["knownUrls"], 1)

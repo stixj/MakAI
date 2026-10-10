@@ -61,7 +61,7 @@ def _search_members(client: httpx.Client, criteria: dict, size: int) -> Iterator
 
 
 def fetch_startupjobs(limit: int = 15, *, searches: tuple[dict, ...] | None = None,
-                      accept_offer=None, skip_urls=None) -> list[RawJobOffer]:
+                      accept_offer=None, skip_urls=None, on_offer=None) -> list[RawJobOffer]:
     """Fetch at most limit current offers; persistent deduplication belongs to the graph.
 
     Rotate AI, Python and Development searches, deduplicate source IDs, and use
@@ -114,11 +114,14 @@ def fetch_startupjobs(limit: int = 15, *, searches: tuple[dict, ...] | None = No
                     if urlsplit(str(detail.url)).hostname != "www.startupjobs.cz":
                         raise ScraperError("Neočekávaná adresa detailu StartupJobs.")
                     offer = _parse_offer(detail.text, url, source_id)
-                    if offer is not None and (accept_offer is None or accept_offer(offer)):
-                        offers.append(offer)
+                    accepted = offer is not None and (accept_offer is None or accept_offer(offer))
                 except (KeyError, TypeError, ValueError, ValidationError):
                     invalid += 1
                     logger.warning("StartupJobs: přeskočen neplatný detail nabídky.")
+                    continue
+                if accepted:
+                    if on_offer is None or on_offer(offer) is not False:
+                        offers.append(offer)
     except httpx.HTTPError as exc:
         raise ScraperError(f"Stažení StartupJobs selhalo: {type(exc).__name__}.") from None
     except ValueError:
@@ -131,5 +134,5 @@ def fetch_startupjobs(limit: int = 15, *, searches: tuple[dict, ...] | None = No
 class StartupJobsScraper(BaseScraper):
     portal = "StartupJobs"
 
-    def fetch_jobs(self, limit: int) -> list[RawJobOffer]:
-        return fetch_startupjobs(limit)
+    def fetch_jobs(self, limit: int, *, on_offer=None) -> list[RawJobOffer]:
+        return fetch_startupjobs(limit, on_offer=on_offer)

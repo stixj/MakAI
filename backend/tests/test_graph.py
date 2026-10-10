@@ -24,6 +24,15 @@ class RecordingStore:
         self.calls.append(dict(evaluations))
 
 
+class DiscoveringStore(RecordingStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.discovered: list[JobOffer] = []
+
+    def discover_job(self, offer: JobOffer) -> None:
+        self.discovered.append(offer)
+
+
 def initial_state(offers: list[JobOffer] | None = None) -> MakAIState:
     return {"offers": sample_offers() if offers is None else offers, "evaluations": {}, "errors": []}
 
@@ -54,7 +63,7 @@ class GraphTests(unittest.TestCase):
                              or demo_evaluate_job(base)).invoke(initial_state([rejected]))
         self.assertEqual(calls, [])
         self.assertEqual(result["offers"], [])
-        self.assertEqual(result["skipped_by_prefilter"], [rejected])
+        self.assertEqual(result["skipped_by_prefilter"], [{"offer": rejected, "reason": "title_primary_non_target_role"}])
 
     def test_state_is_updated_and_saved_before_next_offer(self):
         offers = sample_offers()
@@ -71,6 +80,17 @@ class GraphTests(unittest.TestCase):
         self.assertEqual([update["saved_ids"] for update in saves],
                          [[offers[0].id], [offer.id for offer in offers]])
         self.assertTrue(all("offers" not in update for update in saves))
+
+    def test_offer_is_checkpointed_before_evaluator_runs(self):
+        offer = sample_offers()[0]
+        store = DiscoveringStore()
+
+        def evaluator(item):
+            self.assertEqual(store.discovered, [offer])
+            return demo_evaluate_job(item)
+
+        result = build_graph(store=store, evaluator=evaluator).invoke(initial_state([offer]))
+        self.assertEqual(result["saved_ids"], [offer.id])
 
     def test_large_batch_does_not_hit_default_graph_recursion_limit(self):
         base = sample_offers()[0]

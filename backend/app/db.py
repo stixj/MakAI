@@ -30,6 +30,19 @@ CREATE_INDEX = """
     CREATE UNIQUE INDEX IF NOT EXISTS makai_job_canonical_v2_idx
     ON makai_job_evaluations (json_extract(offer, '$.canonical_id'))
 """
+INGESTION_TABLE = "makai_job_ingestion"
+CREATE_INGESTION_TABLE = """
+    CREATE TABLE IF NOT EXISTS makai_job_ingestion (
+        offer_id TEXT PRIMARY KEY,
+        canonical_id TEXT NOT NULL UNIQUE,
+        offer TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'discovered'
+            CHECK(status IN ('discovered', 'evaluated', 'filtered')),
+        evaluation TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )
+"""
 UPSERT = """
     INSERT INTO makai_job_evaluations (offer_id, offer, evaluation, evaluated_at)
     VALUES (?, ?, ?, ?)
@@ -75,13 +88,14 @@ def _schema_statements(store: "TursoEvaluationStore") -> list[tuple[str, list[di
     All returned DDL/DML is applied in one transaction. Existing offer_id keys
     stay intact for downstream consumers; canonical identity has a unique index.
     """
+    statements = [] if getattr(store, "_ingestion_ready", False) else [(CREATE_INGESTION_TABLE, [])]
     if getattr(store, "_canonical_ready", False):
-        return []
-    statements = [(CREATE_TABLE, [])]
+        return statements
+    statements.append((CREATE_TABLE, []))
     if _table_exists(store):
         if _execute(store, "SELECT name FROM sqlite_master WHERE type='index' AND name=?", INDEX):
             store._canonical_ready = True
-            return []
+            return statements
         # Drop the old constraint in the same transaction as the backfill;
         # rollback restores both the old identities and their unique index.
         statements.append(("DROP INDEX IF EXISTS makai_job_canonical_idx", []))
@@ -130,6 +144,35 @@ def _transaction(store: "TursoEvaluationStore", statements: list[tuple[str, list
             or successes[-1] is not None):
         raise TursoError("Uložení do Turso selhalo; úspěšný COMMIT nebyl potvrzen.")
     store._canonical_ready = True
+    store._ingestion_ready = True
+
+
+def discover_job(store: "TursoEvaluationStore", offer: JobOffer) -> None:
+    """Durably checkpoint a validated offer before any paid evaluation."""
+    offer = JobOffer.model_validate(offer.model_dump())
+    statements = _schema_statements(store)
+    now = datetime.now(UTC).isoformat()
+    statements.append(("""
+        INSERT INTO makai_job_ingestion
+            (offer_id, canonical_id, offer, status, evaluation, created_at, updated_at)
+        VALUES (?, ?, ?, 'discovered', NULL, ?, ?)
+        ON CONFLICT(canonical_id) DO UPDATE SET
+            offer=excluded.offer, updated_at=excluded.updated_at
+        WHERE makai_job_ingestion.status='discovered'
+    """, _args(offer.id, offer.canonical_id, offer.model_dump_json(), now, now)))
+    _transaction(store, statements)
+
+
+def mark_filtered_jobs(store: "TursoEvaluationStore", offers: Sequence[JobOffer]) -> None:
+    if not offers:
+        return
+    statements = _schema_statements(store)
+    for offer in offers:
+        statements.append(("""
+            UPDATE makai_job_ingestion SET status='filtered', updated_at=?
+            WHERE canonical_id=? AND status='discovered'
+        """, _args(datetime.now(UTC).isoformat(), offer.canonical_id)))
+    _transaction(store, statements)
 
 
 def find_existing_job(store: "TursoEvaluationStore", offer: JobOffer) -> JobOffer | None:
@@ -164,6 +207,10 @@ def save_evaluations(store: "TursoEvaluationStore", offers: Sequence[JobOffer],
     for offer in rows:
         statements.append((UPSERT, _args(offer.id, offer.model_dump_json(),
                                        evaluations[offer.id].model_dump_json(), timestamp)))
+        statements.append(("""
+            UPDATE makai_job_ingestion SET status='evaluated', evaluation=?, updated_at=?
+            WHERE canonical_id=?
+        """, _args(evaluations[offer.id].model_dump_json(), timestamp, offer.canonical_id)))
     _transaction(store, statements)
 
 

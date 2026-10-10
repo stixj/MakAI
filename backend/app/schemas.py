@@ -66,6 +66,10 @@ class JobFitEvaluation(BaseModel):
     tailored_cv_highlights: list[NonEmptyText] = Field(
         description="Pouze doslovné položky approved_cv_highlights z profilu.",
     )
+    salary_stated: bool = False
+    salary_min_czk: int | None = Field(default=None, ge=0, strict=True)
+    salary_max_czk: int | None = Field(default=None, ge=0, strict=True)
+    salary_assessment: Literal["ODPOVÍDÁ", "POD_LIMITEM", "NEUVEDENO"] = "NEUVEDENO"
 
     @model_validator(mode="after")
     def consistent_verdict(self) -> Self:
@@ -76,6 +80,12 @@ class JobFitEvaluation(BaseModel):
         )
         if self.verdict != expected:
             raise ValueError("Verdikt neodpovídá pásmu skóre: 80–100 / 50–79 / 0–49.")
+        if self.salary_min_czk is not None and self.salary_max_czk is not None and self.salary_min_czk > self.salary_max_czk:
+            raise ValueError("Minimální mzda nesmí být vyšší než maximální mzda.")
+        if not self.salary_stated and (self.salary_min_czk is not None or self.salary_max_czk is not None):
+            raise ValueError("Neznámá mzda nesmí obsahovat normalizované částky.")
+        if not self.salary_stated and self.salary_assessment != "NEUVEDENO":
+            raise ValueError("Neznámá mzda musí mít hodnocení NEUVEDENO.")
         return self
 
 
@@ -84,7 +94,7 @@ class MakAIState(TypedDict):
     evaluations: dict[str, JobFitEvaluation]
     errors: list[str]
     skipped_duplicates: NotRequired[list[str]]
-    skipped_by_prefilter: NotRequired[list[JobOffer]]
+    skipped_by_prefilter: NotRequired[list[dict[str, object]]]
     saved_ids: NotRequired[list[str]]
     enriched_ids: NotRequired[list[str]]
     evaluation_blocked: NotRequired[dict | None]
@@ -99,7 +109,7 @@ class MakAIStateUpdate(TypedDict, total=False):
     evaluations: dict[str, JobFitEvaluation]
     errors: list[str]
     skipped_duplicates: list[str]
-    skipped_by_prefilter: list[JobOffer]
+    skipped_by_prefilter: list[dict[str, object]]
     saved_ids: list[str]
     enriched_ids: list[str]
     evaluation_blocked: dict | None

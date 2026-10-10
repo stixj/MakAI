@@ -12,6 +12,8 @@ from rich.text import Text
 if __package__:
     from .app.config import get_settings
     from .app.graph import build_graph
+    from .app.hunt_filters import HuntSelection
+    from .app.ingestion import discovery_callback
     from .app.profile import load_candidate_profile
     from .app.search_plan import startup_searches, jobs_listing_urls
     from .app.scrapers import SCRAPERS, DEFAULT_PORTALS
@@ -21,6 +23,8 @@ if __package__:
 else:
     from app.config import get_settings
     from app.graph import build_graph
+    from app.hunt_filters import HuntSelection
+    from app.ingestion import discovery_callback
     from app.profile import load_candidate_profile
     from app.search_plan import startup_searches, jobs_listing_urls
     from app.scrapers import SCRAPERS, DEFAULT_PORTALS
@@ -51,19 +55,29 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(store, TursoEvaluationStore):
             raise StorageConfigurationError("Lov vyžaduje Turso: nastav DATABASE_URL a TURSO_AUTH_TOKEN.")
         store.check_connection()
+        known_urls, known_ids = store.known_offer_identities()
+        selection = HuntSelection("all", known_urls=known_urls, known_ids=known_ids)
+        on_offer = discovery_callback(store)
         portals = list(SCRAPERS) if "all" in args.portals else list(dict.fromkeys(args.portals))
         console.print(Text("MakAI – lov: " + ", ".join(portals), style="bold cyan"))
         offers = []
         source_errors = []
         for portal in portals:
             try:
-                found = (fetch_startupjobs(args.limit, searches=startup_searches(profile)) if portal == "startupjobs"
-                         else SCRAPERS[portal](listing_urls=jobs_listing_urls(profile)).fetch_jobs(args.limit) if portal == "jobs"
-                         else SCRAPERS[portal]().fetch_jobs(args.limit))
+                found = (fetch_startupjobs(args.limit, searches=startup_searches(profile),
+                                           accept_offer=selection.accept, skip_urls=selection.known_urls,
+                                           on_offer=on_offer) if portal == "startupjobs"
+                         else SCRAPERS[portal](listing_urls=jobs_listing_urls(profile)).fetch_jobs(
+                             args.limit, accept_offer=selection.accept, skip_urls=selection.known_urls,
+                             on_offer=on_offer) if portal == "jobs"
+                         else SCRAPERS[portal]().fetch_jobs(args.limit, accept_offer=selection.accept,
+                                                          skip_urls=selection.known_urls, on_offer=on_offer))
                 offers.extend(found)
                 console.print(Text(f"{portal}: {len(found)} nabídek."))
             except ScraperError as exc:
                 source_errors.append(str(exc))
+        for known_offer in selection.known_matches:
+            store.upsert_or_enrich_job(known_offer)
         console.print(f"Nalezeno: {len(offers)} nabídek.")
         result = build_graph(settings=settings, store=store, profile=profile).invoke(
             {"offers": offers, "evaluations": {}, "errors": source_errors}

@@ -62,8 +62,11 @@ class LocalHuntTests(unittest.TestCase):
         evaluator = Mock(return_value=demo_evaluate_job(sample_offers()[0]))
         graph = api.build_graph(store=store, evaluator=evaluator)
         scraper = Mock(portal="Prace.cz")
-        def fetch(limit, *, accept_offer, skip_urls):
-            return [offer for offer in details if str(offer.url) not in skip_urls and accept_offer(offer)][:limit]
+        def fetch(limit, *, accept_offer, skip_urls, on_offer=None):
+            accepted = [offer for offer in details if str(offer.url) not in skip_urls and accept_offer(offer)]
+            if on_offer is not None:
+                accepted = [offer for offer in accepted if on_offer(offer) is not False]
+            return accepted[:limit]
         scraper.return_value.fetch_jobs.side_effect = fetch
         selection_cls = api.HuntSelection
         settings = Mock(llm_provider="gemini", gemini_api_key="test-only")

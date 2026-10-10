@@ -10,6 +10,7 @@ class ProfileTursoStore(TursoEvaluationStore):
             raise ValueError("Neplatný identifikátor profilu.")
         super().__init__(database_url, auth_token)
         self.table = "makai_profile_" + profile_id
+        self.ingestion_table = self.table + "_ingestion"
         self.profile_id = profile_id
 
     def _request(self, command):
@@ -22,12 +23,15 @@ class ProfileTursoStore(TursoEvaluationStore):
                 return [scoped(item) for item in value]
             if value == "makai_job_evaluations":
                 return self.table
+            if value == "makai_job_ingestion":
+                return self.ingestion_table
             if value in ("makai_job_canonical_idx", "makai_job_canonical_v2_idx", "makai_job_url_idx"):
                 return str(value).replace("makai_job", self.table)
             return value
 
         def rewrite(sql):
             return (sql.replace("makai_job_evaluations", self.table)
+                    .replace("makai_job_ingestion", self.ingestion_table)
                     .replace("makai_job_canonical_v2_idx", self.table + "_canonical_v2_idx")
                     .replace("makai_job_canonical_idx", self.table + "_canonical_idx")
                     .replace("makai_job_url_idx", self.table + "_url_idx"))

@@ -155,7 +155,7 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             load_application_history(path)
 
-    def test_prompt_keeps_profile_history_and_untrusted_offer_separate(self) -> None:
+    def test_prompt_omits_bulk_history_and_duplicate_markdown(self) -> None:
         record = ApplicationRecord(
             employer="Dřívější firma",
             position="Analytik",
@@ -173,9 +173,9 @@ class ProfileTests(unittest.TestCase):
             patch("backend.app.evaluator.REFERENCES_PATH", reference),
         ):
             prompt = json.loads(build_prompt(sample_offers()[0]))
-        self.assertEqual(prompt["application_history"][0]["reported_status"], "applied")
-        self.assertNotIn("application_history", prompt["candidate_profile"])
-        self.assertIn("Historická reference", prompt["historical_career_references"])
+        self.assertNotIn("application_history", prompt)
+        self.assertNotIn("historical_career_references", prompt)
+        self.assertNotIn("profile_markdown", prompt["candidate_profile"])
         self.assertEqual(prompt["untrusted_job_offer"]["id"], sample_offers()[0].id)
 
     def test_cv_output_is_limited_to_the_separate_approved_source(self) -> None:

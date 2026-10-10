@@ -170,6 +170,14 @@ class TursoEvaluationStore:
     def save_evaluated_job(self, offer: JobOffer, evaluation: JobFitEvaluation) -> None:
         self.upsert_or_enrich_job(offer, evaluation)
 
+    def discover_job(self, offer: JobOffer) -> None:
+        from .db import discover_job
+        discover_job(self, offer)
+
+    def mark_filtered_jobs(self, offers) -> None:
+        from .db import mark_filtered_jobs
+        mark_filtered_jobs(self, offers)
+
     def find_existing_job(self, offer: JobOffer) -> JobOffer | None:
         from .db import find_existing_job
         return find_existing_job(self, offer)

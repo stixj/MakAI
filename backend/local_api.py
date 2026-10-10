@@ -4,6 +4,7 @@ import sys
 
 from app.config import get_settings
 from app.hunt_filters import HuntSelection
+from app.ingestion import discovery_callback
 from app.history import history_page
 from app.profile_builder import builder_config, generate_profile, ProfileGenerationError
 from app.evaluator import evaluation_context, evaluate_job
@@ -40,6 +41,7 @@ def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
             raise ValueError("Výchozí profil vyžaduje nakonfigurované Turso.")
         store.check_connection()
     previous = result_rows(profile_id) if not remote else []
+    on_offer = discovery_callback(store)
     manual_urls, manual_ids = set(), set()
     if remote:
         known_urls, known_ids = store.known_offer_identities()
@@ -65,13 +67,16 @@ def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
             scraper = None
             if portal == "startupjobs":
                 found = fetch_startupjobs(limit, searches=startup_searches(profile),
-                                          accept_offer=selection.accept, skip_urls=selection.known_urls)
+                                          accept_offer=selection.accept, skip_urls=selection.known_urls,
+                                          on_offer=on_offer)
             elif portal == "jobs":
                 scraper = SCRAPERS[portal](listing_urls=jobs_listing_urls(profile))
-                found = scraper.fetch_jobs(limit, accept_offer=selection.accept, skip_urls=selection.known_urls)
+                found = scraper.fetch_jobs(limit, accept_offer=selection.accept, skip_urls=selection.known_urls,
+                                           on_offer=on_offer)
             else:
                 scraper = SCRAPERS[portal]()
-                found = scraper.fetch_jobs(limit, accept_offer=selection.accept, skip_urls=selection.known_urls)
+                found = scraper.fetch_jobs(limit, accept_offer=selection.accept, skip_urls=selection.known_urls,
+                                           on_offer=on_offer)
             offers.extend(found)
             stats = getattr(scraper, "stats", {}) if scraper is not None else {}
             stats = stats if isinstance(stats, dict) else {}
@@ -96,6 +101,9 @@ def hunt(payload: dict, *, profile_override=None, store_override=None) -> dict:
                                  {"offers": offers, "evaluations": {}, "errors": errors})
     return {"profileId": profile_id, "found": len(offers), "evaluated": len(result["evaluations"]),
             "saved": len(result["saved_ids"]), "errors": result["errors"], "sources": sources,
+            "skippedByPrefilter": [{"offerId": item["offer"].id, "title": item["offer"].title,
+                                     "reason": item["reason"]}
+                                    for item in result.get("skipped_by_prefilter", [])],
             "evaluationBlocked": result.get("evaluation_blocked"),
             "evaluationLimitReached": result.get("evaluation_limit_reached", False),
             "period": payload.get("period", "all"),

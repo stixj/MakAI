@@ -205,6 +205,7 @@ class PortalTests(unittest.TestCase):
 class MultiPortalCliTests(unittest.TestCase):
     def test_cli_defaults_call_each_requested_source_once(self):
         store = Mock(spec=TursoEvaluationStore)
+        store.known_offer_identities.return_value = (set(), set())
         scrapers = {key: Mock() for key in DEFAULT_PORTALS}
         for scraper in scrapers.values():
             scraper.return_value.fetch_jobs.return_value = []
@@ -220,13 +221,15 @@ class MultiPortalCliTests(unittest.TestCase):
             self.assertEqual(run_hunt.main(["--limit", "1"]), 0)
         startup.assert_not_called()
         for scraper in scrapers.values():
-            scraper.return_value.fetch_jobs.assert_called_once_with(1)
+            scraper.return_value.fetch_jobs.assert_called_once()
+            self.assertEqual(scraper.return_value.fetch_jobs.call_args.args, (1,))
 
 
     def test_cli_continues_after_source_failure_and_reports_it(self):
         store = TursoEvaluationStore("libsql://example.turso.io", "test-only")
         engine = SQLiteHrana()
         self.addCleanup(engine.db.close)
+        store.known_offer_identities = Mock(return_value=(set(), set()))
         output = io.StringIO()
         jobs = Mock()
         jobs.return_value.fetch_jobs.return_value = sample_offers()
@@ -238,8 +241,8 @@ class MultiPortalCliTests(unittest.TestCase):
              patch.dict(run_hunt.SCRAPERS, {"jobs": jobs, "prace": prace}), \
              patch("backend.run_hunt.Console", return_value=Console(file=output, width=180)):
             self.assertEqual(run_hunt.main(["--portals", "jobs", "prace", "jobs", "--limit", "2"]), 1)
-        jobs.return_value.fetch_jobs.assert_called_once_with(2)
-        prace.return_value.fetch_jobs.assert_called_once_with(2)
+        self.assertEqual(jobs.return_value.fetch_jobs.call_args.args, (2,))
+        self.assertEqual(prace.return_value.fetch_jobs.call_args.args, (2,))
         self.assertIn("Prace.cz: změněný výpis", output.getvalue())
         self.assertEqual(engine.db.execute("SELECT COUNT(*) FROM makai_job_evaluations").fetchone()[0], 2)
 

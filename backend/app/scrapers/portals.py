@@ -67,6 +67,7 @@ class HtmlJobScraper(BaseScraper):
         return parse_job_detail(html, url, self.portal, allow_local_time=self.allow_local_time)
 
     def fetch_jobs(self, limit: int, *, accept_offer: Callable | None = None,
+                   on_offer: Callable | None = None,
                    skip_urls: set[str] | None = None) -> list[RawJobOffer]:
         validate_limit(limit)
         if not limit:
@@ -116,11 +117,13 @@ class HtmlJobScraper(BaseScraper):
                                         "url": HttpUrl(url),
                                         "sources": [{"portal": self.portal, "url": url}],
                                     })
-                                    if accept_offer is None or accept_offer(offer):
-                                        offers.append(offer)
                             except (KeyError, TypeError, ValueError):
                                 invalid += 1
                                 logger.warning("%s: přeskočen neplatný detail nabídky.", self.portal)
+                                continue
+                            if offer is not None and (accept_offer is None or accept_offer(offer)):
+                                if on_offer is None or on_offer(offer) is not False:
+                                    offers.append(offer)
                         next_link = soup.select_one('a[rel~="next"][href]')
                         if next_link is None:
                             break

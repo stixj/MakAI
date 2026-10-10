@@ -83,18 +83,10 @@ def evaluation_context(profile: CandidateProfile, *, personal_history: bool = Fa
 
 
 def build_prompt(offer: JobOffer) -> str:
-    context = _profile_context.get()
-    personal_history = context is None or context[1]
     return json.dumps(
         {
-            "candidate_profile": active_profile().model_dump(mode="json"),
-            "application_history": [
-                item.model_dump(mode="json") for item in (load_application_history() if personal_history else ())
-            ],
-            "historical_career_references": (
-                REFERENCES_PATH.read_text(encoding="utf-8")
-                if personal_history and REFERENCES_PATH.exists()
-                else ""
+            "candidate_profile": active_profile().model_dump(
+                mode="json", exclude={"profile_markdown"},
             ),
             "untrusted_job_offer": offer.model_dump(mode="json"),
         },
@@ -113,7 +105,7 @@ def validate_evaluation(evaluation: JobFitEvaluation) -> JobFitEvaluation:
 
 def _evaluate_gemini(offer: JobOffer, settings: Settings) -> JobFitEvaluation:
     if settings.gemini_api_key is None:
-        raise EvaluationError("Chybí GEMINI_API_KEY.")
+        raise EvaluationError("Chybí GEMINI_API_KEY.", kind="credentials", stop_batch=True)
     with genai.Client(
         api_key=settings.gemini_api_key.get_secret_value(),
         http_options=types.HttpOptions(
@@ -128,7 +120,7 @@ def _evaluate_gemini(offer: JobOffer, settings: Settings) -> JobFitEvaluation:
                 system_instruction=SYSTEM_PROMPT,
                 response_mime_type="application/json",
                 response_json_schema=JobFitEvaluation.model_json_schema(),
-                max_output_tokens=settings.llm_max_output_tokens,
+                max_output_tokens=settings.evaluation_max_output_tokens,
             ),
         )
     if not response.text:
@@ -138,7 +130,7 @@ def _evaluate_gemini(offer: JobOffer, settings: Settings) -> JobFitEvaluation:
 
 def _evaluate_openai(offer: JobOffer, settings: Settings) -> JobFitEvaluation:
     if settings.openai_api_key is None:
-        raise EvaluationError("Chybí OPENAI_API_KEY.")
+        raise EvaluationError("Chybí OPENAI_API_KEY.", kind="credentials", stop_batch=True)
     with OpenAI(
         api_key=settings.openai_api_key.get_secret_value(),
         timeout=settings.llm_timeout_seconds,
@@ -151,7 +143,7 @@ def _evaluate_openai(offer: JobOffer, settings: Settings) -> JobFitEvaluation:
                 {"role": "user", "content": build_prompt(offer)},
             ],
             text_format=JobFitEvaluation,
-            max_output_tokens=settings.llm_max_output_tokens,
+            max_output_tokens=settings.evaluation_max_output_tokens,
             store=False,
         )
     if response.status != "completed" or response.output_parsed is None:
@@ -178,7 +170,8 @@ def evaluate_job(offer: JobOffer) -> JobFitEvaluation:
             providers.append(("OpenAI", _evaluate_openai))
     if not providers:
         raise EvaluationError(
-            "Chybí API klíč pro zvoleného poskytovatele. Vyplň .env nebo použij --demo."
+            "Chybí API klíč pro zvoleného poskytovatele. Vyplň .env nebo použij --demo.",
+            kind="credentials", stop_batch=True,
         )
     failures: list[EvaluationError] = []
     for name, provider in providers:
@@ -191,7 +184,7 @@ def evaluate_job(offer: JobOffer) -> JobFitEvaluation:
                 logger.warning("Evaluace selhala (%s; %s).", name, failure.kind)
                 # Retryable describes a future run, not permission to keep a
                 # timed-out or quota-blocked batch alive (including fallback).
-                if failure.stop_batch and failure.kind in {"transport", "daily_quota", "rate_limit"}:
+                if failure.kind == "transport" or (failure.stop_batch and not failure.retryable):
                     raise failure from None
                 if not failure.retryable or attempt == 2:
                     break

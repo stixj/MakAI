@@ -187,12 +187,31 @@ class IngestionIntegrationTests(unittest.TestCase):
             self.assertFalse(self.store.is_job_duplicate("'); DROP TABLE makai_job_evaluations; --"))
         self.assertEqual(self.engine.db.execute("SELECT COUNT(*) FROM makai_job_evaluations").fetchone()[0], 1)
 
-    def test_save_failure_keeps_evaluation_and_never_reports_saved(self):
+    def test_discovered_snapshot_is_committed_then_updated_to_evaluated(self):
+        offer = self.offers[0]
+        with patch.object(self.store, "_request", side_effect=self.engine):
+            self.store.discover_job(offer)
+            row = self.engine.db.execute(
+                "SELECT status, offer, evaluation FROM makai_job_ingestion WHERE canonical_id=?",
+                (offer.canonical_id,),
+            ).fetchone()
+            self.assertEqual(row[0], "discovered")
+            self.assertEqual(json.loads(row[1])["raw_description"], offer.raw_description)
+            self.assertIsNone(row[2])
+            self.store.save_evaluated_job(offer, demo_evaluate_job(offer))
+        row = self.engine.db.execute(
+            "SELECT status, evaluation FROM makai_job_ingestion WHERE canonical_id=?",
+            (offer.canonical_id,),
+        ).fetchone()
+        self.assertEqual(row[0], "evaluated")
+        self.assertEqual(json.loads(row[1])["score"], 95)
+
+    def test_discovery_checkpoint_failure_prevents_paid_evaluation(self):
         self.engine.fail_commit = True
         with patch.object(self.store, "_request", side_effect=self.engine):
             result = build_graph(store=self.store, evaluator=demo_evaluate_job).invoke(
                 {"offers": self.offers[:1], "evaluations": {}, "errors": []})
-        self.assertEqual(len(result["evaluations"]), 1)
+        self.assertEqual(len(result["evaluations"]), 0)
         self.assertEqual(result["saved_ids"], [])
         self.assertEqual(len(result["errors"]), 1)
         self.assertFalse(self.engine.db.in_transaction)

@@ -31,6 +31,9 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual(prompt["untrusted_job_offer"]["id"], self.offer.id)
         self.assertEqual(prompt["candidate_profile"]["skills"], list(MASTER_PROFILE.skills))
         self.assertIn("approved_cv_highlights", prompt["candidate_profile"])
+        self.assertNotIn("profile_markdown", prompt["candidate_profile"])
+        self.assertNotIn("application_history", prompt)
+        self.assertNotIn("historical_career_references", prompt)
 
     def test_gemini_adapter_enforces_schema_and_parses_response(self) -> None:
         settings = Settings(gemini_api_key="test-only")
@@ -44,6 +47,7 @@ class EvaluatorTests(unittest.TestCase):
         kwargs = client.models.generate_content.call_args.kwargs
         self.assertEqual(kwargs["config"].response_json_schema, JobFitEvaluation.model_json_schema())
         self.assertEqual(kwargs["config"].response_mime_type, "application/json")
+        self.assertEqual(kwargs["config"].max_output_tokens, 1200)
         http_options = client_factory.call_args.kwargs["http_options"]
         self.assertEqual(http_options.timeout, 30_000)
         self.assertEqual(http_options.retry_options.attempts, 1)
@@ -62,6 +66,7 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual(kwargs["model"], "gpt-4o-mini")
         self.assertIs(kwargs["text_format"], JobFitEvaluation)
         self.assertFalse(kwargs["store"])
+        self.assertEqual(kwargs["max_output_tokens"], 1200)
         self.assertEqual(client_factory.call_args.kwargs["max_retries"], 0)
 
     def test_openai_refusal_or_incomplete_response_is_an_error(self) -> None:
@@ -145,12 +150,43 @@ class EvaluatorTests(unittest.TestCase):
             with self.subTest(update=update), self.assertRaises(ValidationError):
                 JobOffer.model_validate(self.offer.model_dump() | update)
 
+    def test_structured_salary_fields_validate_unknowns_and_bounds(self) -> None:
+        salary = JobFitEvaluation.model_validate(self.evaluation.model_dump() | {
+            "salary_stated": True, "salary_min_czk": 70000, "salary_max_czk": 80000,
+            "salary_assessment": "ODPOVÍDÁ",
+        })
+        self.assertEqual(salary.salary_min_czk, 70000)
+        for update in (
+            {"salary_stated": False, "salary_min_czk": 50000},
+            {"salary_stated": True, "salary_min_czk": 80000, "salary_max_czk": 70000},
+            {"salary_assessment": "MAYBE"},
+        ):
+            with self.subTest(update=update), self.assertRaises(ValidationError):
+                JobFitEvaluation.model_validate(self.evaluation.model_dump() | update)
+
 
 if __name__ == "__main__":
     unittest.main()
 
 
 class ProviderAvailabilityTests(unittest.TestCase):
+    def test_auth_failure_stops_batch_without_retry_or_provider_fallback(self):
+        error = ClientError(401, {"error": {"message": "private credential response"}})
+        settings = Settings(gemini_api_key="test-only", openai_api_key="test-only",
+                            allow_openai_fallback=True)
+        with patch("backend.app.evaluator.get_settings", return_value=settings), \
+             patch("backend.app.evaluator._evaluate_gemini", side_effect=error) as primary, \
+             patch("backend.app.evaluator._evaluate_openai") as fallback, \
+             patch("backend.app.evaluator.time.sleep") as sleep:
+            with self.assertRaises(EvaluationError) as caught:
+                evaluate_job(sample_offers()[0])
+        self.assertTrue(caught.exception.stop_batch)
+        self.assertEqual(caught.exception.kind, "credentials")
+        self.assertNotIn("private", str(caught.exception))
+        primary.assert_called_once()
+        fallback.assert_not_called()
+        sleep.assert_not_called()
+
     def test_transport_errors_are_retryable_batch_blockers_and_redacted(self):
         request = httpx.Request("POST", "https://example.invalid")
         errors = (

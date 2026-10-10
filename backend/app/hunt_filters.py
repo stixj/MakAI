@@ -10,15 +10,24 @@ from .scrapers.structured import clean_url
 
 PERIOD_HOURS = {"all": None, "24h": 24, "7d": 168, "30d": 720}
 
-# Broad, unambiguous occupations outside the candidate's stated AI/business
-# direction. Keep this title-only: description mentions are not sufficient.
-DEFAULT_NO_GO_KEYWORDS = (
-    "svářeč", "řidič", "skladník", "zedník", "účetní", "kuchař",
-    "operátor výroby", "výrobní operátor", "pokladní", "číšník", "servírka",
-)
+# Only explicit primary-role title patterns are eligible for deterministic exclusion.
 REMOTE_TERMS = ("remote", "home office", "práce z domova", "celá čr", "celá česká republika",
-                "celá česká republika", "czech republic", "anywhere in czech")
+                "czech republic", "anywhere in czech")
 COUNTRY_TERMS = ("česká republika", "celá čr", "celá česká republika", "czech republic")
+AMBIGUOUS_LOCATION_TERMS = ("čr", "cesko", "czechia", "hybrid", "kombinovaně", "více lokalit")
+TECHNICAL_ROLE_TERMS = (
+    "developer", "engineer", "vývojář", "programátor", "analyst", "analytik",
+    "architect", "architekt", "data scientist", "technolog",
+)
+PRIMARY_NO_GO_ROLE_PATTERNS = (
+    r"^(?:(?:hlavni|samostatny|juniorni|seniorni|mzdovy)\s+)?ucetni(?:\s+(?:junior|senior|samostatny))?$",
+    r"^svarec(?:\s+[\w/+.-]+)*$",
+    r"^ridic(?:\s+[\w/+.-]+)*$",
+    r"^skladnik(?:\s+[\w/+.-]+)*$",
+    r"^zednik(?:\s+[\w/+.-]+)*$",
+    r"^kuchar(?:\s+[\w/+.-]+)*$",
+    r"^(?:operator vyroby|vyrobni operator|pokladni|cisnik|servirka)$",
+)
 KNOWN_LOCALITIES = (
     "brno", "praha", "ostrava", "plzeň", "liberec", "olomouc", "pardubice",
     "hradec králové", "české budějovice", "ústí nad labem", "zlin", "zlín",
@@ -42,8 +51,6 @@ def _contains_term(value: str, term: str) -> bool:
     normalized_value, normalized_term = _normalized(value), _normalized(term.strip())
     if not normalized_term:
         return False
-    if " " in normalized_term:
-        return normalized_term in normalized_value
     return re.search(rf"(?<!\w){re.escape(normalized_term)}(?!\w)", normalized_value) is not None
 
 
@@ -55,6 +62,10 @@ def _location_rejected(location: str | None, profile: CandidateProfile) -> bool:
     if not location:
         return False  # Unknown locality is not proof that a job is inaccessible.
     if any(_contains_term(location, term) for term in REMOTE_TERMS):
+        return False
+    if any(_contains_term(location, term) for term in AMBIGUOUS_LOCATION_TERMS):
+        return False
+    if _contains_term(location, "kraj"):
         return False
     preferences = " ".join(profile.location_preferences)
     if any(_contains_term(location, term) for term in COUNTRY_TERMS) and any(
@@ -70,26 +81,47 @@ def _location_rejected(location: str | None, profile: CandidateProfile) -> bool:
     # A direct locality written in the profile can be matched even if it is not
     # in the common-city list above.
     profile_places = [part.strip() for pref in profile.location_preferences
-                      for part in re.split(r"[,;/]|\b(?:a|nebo|primarnÄ›|primárně)\b", pref, flags=re.I)
+                      for part in re.split(r"[,;/]|\b(?:a|nebo|primárně)\b", pref, flags=re.I)
                       if len(part.strip()) >= 3]
     if any(_contains_term(location, place) for place in profile_places):
         return False
     return False
 
 
+def _title_rejection_reason(offer: RawJobOffer, profile: CandidateProfile) -> str | None:
+    title = offer.title
+    # Domain words are often part of a technical product or customer context,
+    # not the occupation itself (e.g. "Python Developer pro účetní software").
+    if any(_contains_term(title, term) for term in TECHNICAL_ROLE_TERMS):
+        return None
+    normalized_title = re.sub(r"\s*\((?:m|z|m/z|z/m)\)\s*", " ", _normalized(title))
+    normalized_title = re.sub(r"\s*[-–—]\s*", " ", normalized_title)
+    normalized_title = re.sub(r"\s+", " ", normalized_title).strip()
+    if any(re.fullmatch(pattern, normalized_title) for pattern in PRIMARY_NO_GO_ROLE_PATTERNS):
+        return "title_primary_non_target_role"
+    # Explicit profile keywords stay whole-token matches, but generic free text
+    # in no_go_criteria is reserved for semantic evaluation by the LLM.
+    if any(_contains_term(title, keyword) for keyword in profile.no_go_keywords):
+        return "profile_no_go_keyword"
+    return None
+
+
+def prefilter_rejection_reason(offer: RawJobOffer, profile: CandidateProfile) -> str | None:
+    if _location_rejected(offer.location, profile):
+        return "explicit_location_outside_preferences"
+    return _title_rejection_reason(offer, profile)
+
+
 def filter_promising_offers(
     offers: list[RawJobOffer], profile: CandidateProfile,
-) -> tuple[list[RawJobOffer], list[RawJobOffer]]:
-    """Drop clearly inaccessible locations and unrelated occupations before AI."""
-    rejected: list[RawJobOffer] = []
+) -> tuple[list[RawJobOffer], list[dict[str, object]]]:
+    """Drop only clear location/occupation mismatches; preserve an audit reason."""
+    rejected: list[dict[str, object]] = []
     accepted: list[RawJobOffer] = []
-    profile_keywords = getattr(profile, "no_go_keywords", ())
-    profile_keywords = (*profile_keywords, *profile.no_go_criteria)
-    keywords = tuple(dict.fromkeys((*DEFAULT_NO_GO_KEYWORDS, *profile_keywords)))
     for offer in offers:
-        if (_location_rejected(offer.location, profile)
-                or any(_contains_term(offer.title, keyword) for keyword in keywords)):
-            rejected.append(offer)
+        reason = prefilter_rejection_reason(offer, profile)
+        if reason:
+            rejected.append({"offer": offer, "reason": reason})
         else:
             accepted.append(offer)
     return accepted, rejected

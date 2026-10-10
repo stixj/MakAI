@@ -45,8 +45,9 @@ class LocalProfilesTests(unittest.TestCase):
             prompt = json.loads(build_prompt(sample_offers()[0]))
             self.assertEqual(prompt["candidate_profile"]["target_roles"], ["Účetní", "Financial Analyst"])
             self.assertEqual(prompt["candidate_profile"]["approved_cv_highlights"], [])
-            self.assertEqual(prompt["application_history"], [])
-            self.assertEqual(prompt["historical_career_references"], "")
+            self.assertNotIn("application_history", prompt)
+            self.assertNotIn("historical_career_references", prompt)
+            self.assertNotIn("profile_markdown", prompt["candidate_profile"])
             history.assert_not_called()
             evaluation = demo_evaluate_job(sample_offers()[0]).model_copy(update={"tailored_cv_highlights": ["Cizí CV tvrzení"]})
             with self.assertRaises(EvaluationError):

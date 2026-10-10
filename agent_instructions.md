@@ -30,6 +30,17 @@ chybějící kompetenci, nedoloženou zkušenost a neověřenou podmínku. Podro
 níže jsou vodítko pro zdůvodnění; do odpovědi nepřidávej další pole ani dílčí skóre
 mimo současné schéma. Vrať úplný objekt odpovídající schématu JobFitEvaluation.
 
+### Mzdová pole ve výstupu
+
+- `salary_stated` nastav na true pouze tehdy, když inzerát výslovně uvádí mzdu.
+- `salary_min_czk` a `salary_max_czk` vyplň pouze při spolehlivém převodu na hrubou
+  měsíční částku v Kč. Roční částku vyděl 12; hodinovou, čistou nebo cizoměnovou
+  mzdu bez spolehlivých údajů nepřeváděj odhadem a částky ponech null.
+- `salary_assessment` musí být přesně `ODPOVÍDÁ`, `POD_LIMITEM` nebo `NEUVEDENO`.
+  Porovnávej známou měsíční částku s `standard_minimum_czk`; pokud mzda chybí nebo
+  ji nelze bezpečně normalizovat, použij `NEUVEDENO`.
+- Nikdy nevymýšlej mzdové rozpětí z obvyklé mzdy v oboru.
+
 tailored_cv_highlights vybírej DOSLOVA z approved_cv_highlights. Když chybí
 schválené CV podklady nebo jde o irelevantní roli, vrať prázdný seznam. Nevymýšlej
 projekty, zaměstnavatele, roky, vzdělání, certifikace, produkční nasazení ani úspory.
