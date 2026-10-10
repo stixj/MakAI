@@ -3,10 +3,10 @@ import ApplicationsPanel from './components/ApplicationsPanel.jsx';
 import DocumentsPanel from './components/DocumentsPanel.jsx';
 import AddOfferPanel from './components/AddOfferPanel.jsx';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowUpRight, Briefcase, RefreshCw, Search, X, Plus, Trash2, Loader2, Menu } from 'lucide-react';
+import { ArrowUpRight, Briefcase, RefreshCw, Search, X, Plus, Trash2, Loader2, Menu, ListChecks } from 'lucide-react';
 import JobCard from './components/JobCard.jsx';
 import ProfilePanel from './components/ProfilePanel.jsx';
-import { COLLECTIONS, normalizeJobState } from './lib/jobState.js';
+import { normalizeJobState } from './lib/jobState.js';
 import { profileApi } from './lib/profileApi.js';
 import LoginGate from './components/LoginGate.jsx';
 import TextSizeControl from './components/TextSizeControl.jsx';
@@ -47,6 +47,7 @@ export function Dashboard({ accountControls }) {
   const [actionError, setActionError] = useState('');
   const currentProfile = useRef(null);
   const undoButton = useRef(null);
+  const filtersPopover = useRef(null);
   const [jobs, setJobs] = useState([]);
   const [status, setStatus] = useState(configured ? 'loading' : 'unconfigured');
   const [error, setError] = useState('');
@@ -69,6 +70,23 @@ export function Dashboard({ accountControls }) {
   const requestId = useRef(0);
   const loadedRevision = useRef(-1);
   const listScroll = useRef(0);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const closeFiltersOutside = event => {
+      const popover = filtersPopover.current;
+      if (popover?.open && !popover.contains(event.target)) popover.open = false;
+    };
+    const closeFiltersOnEscape = event => {
+      if (event.key === 'Escape' && filtersPopover.current?.open) filtersPopover.current.open = false;
+    };
+    document.addEventListener('pointerdown', closeFiltersOutside);
+    document.addEventListener('keydown', closeFiltersOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeFiltersOutside);
+      document.removeEventListener('keydown', closeFiltersOnEscape);
+    };
+  }, []);
 
   const previousProfileId = useRef(null);
   useEffect(() => {
@@ -298,23 +316,28 @@ export function Dashboard({ accountControls }) {
           <label className="relative block min-w-0"><span className="sr-only">Hledat pozici nebo společnost</span><Search className="pointer-events-none absolute left-4 top-3.5 h-4 w-4 text-ink-secondary" aria-hidden="true" /><input type="search" maxLength={200} value={search} onChange={event => changeFilter(setSearch,event.target.value)} placeholder="Pozice nebo společnost" className="min-h-11 w-full rounded-xl border border-border-subtle bg-surface-subtle py-3 pl-11 pr-4 text-sm" /></label>
           <button type="button" className="button-primary min-h-11 w-full sm:w-auto" aria-label="Přidat nabídku" disabled={!profileId} onClick={() => setAdding(value => !value)}><Plus className="h-4 w-4" aria-hidden="true" />Přidat nabídku</button>
         </div>
+        <div className="grid gap-2 sm:grid-cols-2 sm:max-w-2xl" aria-label="Rychlé nastavení přehledu">
+          <label className="block text-xs font-medium text-ink-secondary">Shoda s profilem<select value={verdict} onChange={e => changeFilter(setVerdict,e.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border border-border-subtle bg-surface p-3 text-sm text-ink"><option value="all">Všechny shody ({totalAll})</option>{Object.entries(VERDICTS).map(([key,item]) => <option key={key} value={key}>{item.title} ({counts[key] || 0})</option>)}</select></label>
+          <label className="block text-xs font-medium text-ink-secondary">Řazení<select value={sort} onChange={e => changeFilter(setSort,e.target.value)} className="mt-1.5 min-h-11 w-full rounded-xl border border-border-subtle bg-surface p-3 text-sm text-ink"><option value="score">Nejvyšší shoda</option><option value="priority">Moje priority první</option><option value="newest">Naposledy přidané</option></select></label>
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div role="group" aria-label="Kategorie nabídek" className="inline-grid min-h-11 w-full grid-cols-3 rounded-xl border border-border-subtle bg-surface-subtle p-1 sm:w-auto">
             {[['active','Všechny'],['saved','Uložené'],['applied','Přihlášky']].map(([key,label]) => <button type="button" key={key} aria-pressed={collection === key} className={'min-h-11 rounded-lg px-3 text-sm transition-colors ' + (collection === key ? 'bg-white font-semibold text-brand shadow-sm' : 'text-ink-secondary hover:text-brand')} onClick={() => { changeFilter(setCollection,key); resetFilters(); }}>{label}</button>)}
           </div>
-          <details className="relative w-full sm:w-auto">
-            <summary className="button-secondary min-h-11 w-full cursor-pointer list-none sm:w-auto">{['active','saved','applied'].includes(collection) ? 'Filtry' : `Filtry · ${COLLECTIONS[collection] || 'Další nabídky'}`}</summary>
-            <div className="z-10 mt-2 grid gap-4 rounded-2xl border border-border-subtle bg-surface p-4 shadow-popover sm:absolute sm:right-0 sm:w-80">
-              <label className="block text-sm">Zobrazit<select value={collection} onChange={e => changeFilter(setCollection,e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3"><option value="active">Všechny nabídky</option><option value="saved">Uložené</option><option value="applied">Přihlášky</option><option value="priority">Moje priority</option><option value="manual">Přidáno mnou</option><option value="hidden">Skryté</option></select></label>
-              <label className="block text-sm">Shoda s profilem<select value={verdict} onChange={e => changeFilter(setVerdict,e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3"><option value="all">Všechny shody ({totalAll})</option>{Object.entries(VERDICTS).map(([key,item]) => <option key={key} value={key}>{item.title} ({counts[key] || 0})</option>)}</select></label>
-              <label className="block text-sm">Řadit podle<select value={sort} onChange={e => changeFilter(setSort,e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3"><option value="score">Nejvyšší shoda</option><option value="priority">Moje priority první</option><option value="newest">Naposledy přidané</option></select></label>
+          <div className="flex w-full items-center gap-2 sm:w-auto">
+          <button type="button" className={'button-secondary min-h-11 flex-1 justify-center sm:flex-none ' + (selectionMode ? 'border-brand text-brand' : '')} aria-label={selectionMode ? 'Ukončit hromadný výběr nabídek' : 'Vybrat nabídky k hromadnému smazání'} aria-pressed={selectionMode} disabled={!profileId || !visible.length || loadingResults} onClick={() => { if (selectionMode) leaveSelectionMode(); else { setSelectionMode(true); setSelectedOfferIds(new Set()); setDeleteError(''); } }}><ListChecks className="h-4 w-4" aria-hidden="true" /><span className="sm:hidden">{selectionMode ? 'Ukončit' : 'Vybrat'}</span><span className="hidden sm:inline">{selectionMode ? 'Ukončit výběr' : 'Hromadný výběr'}</span></button>
+          <details ref={filtersPopover} className="relative w-full sm:w-auto">
+            <summary className="button-secondary min-h-11 w-full cursor-pointer list-none sm:w-auto">Další filtry{!['active','saved','applied'].includes(collection) && ` · ${collection === 'priority' ? 'Moje priority' : collection === 'manual' ? 'Přidáno mnou' : 'Skryté nabídky'}`}{(historyPeriod !== 'all' || newOnly || !['active','saved','applied'].includes(collection)) && <span className="ml-2 rounded-full bg-brand px-2 py-0.5 text-xs text-white">{Number(historyPeriod !== 'all') + Number(newOnly) + Number(!['active','saved','applied'].includes(collection))}</span>}</summary>
+            <div className="absolute right-0 top-full z-30 mt-2 grid w-[min(20rem,calc(100vw-2.5rem))] gap-4 rounded-2xl border border-border-subtle bg-surface p-4 shadow-popover">
+              <h2 className="text-sm font-semibold">Další možnosti</h2>
+              <label className="block text-sm">Další kolekce<select value={['priority','manual','hidden'].includes(collection) ? collection : ''} onChange={e => { if (e.target.value) changeFilter(setCollection,e.target.value); }} className="mt-2 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3"><option value="">Vyber kolekci…</option><option value="priority">Moje priority</option><option value="manual">Přidáno mnou</option><option value="hidden">Skryté nabídky</option></select></label>
               <label className="block text-sm">Období<select aria-label="Období nabídek v historii" value={historyPeriod} onChange={e => changeFilter(setHistoryPeriod,e.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3"><option value="all">Celá historie</option><option value="24h">Posledních 24 hodin</option><option value="7d">Posledních 7 dní</option><option value="30d">Posledních 30 dní</option></select></label>
               <label className="block text-sm">Počet nabídek na stránce<select aria-label="Počet nabídek na stránce" value={pageSize} onChange={e => changeFilter(setPageSize,Number(e.target.value))} className="mt-2 min-h-11 w-full rounded-xl border border-border-subtle bg-white p-3">{[6,12,24,48].map(n => <option key={n} value={n}>{n}</option>)}</select></label>
               {shared && <label className="flex min-h-11 items-center gap-3 text-sm"><input className="h-5 w-5 accent-brand" type="checkbox" checked={newOnly} disabled={!previousVisit || demo} onChange={e => { setNewOnly(e.target.checked); setPage(1); }} />Nové od poslední návštěvy</label>}
-              {selectionMode ? <button type="button" className="button-secondary min-h-11" onClick={leaveSelectionMode}>Ukončit výběr ke smazání</button> : <button type="button" className="min-h-11 rounded-xl px-3 text-left text-sm text-ink-secondary transition-colors hover:bg-danger-bg hover:text-danger" disabled={!profileId || !visible.length || loadingResults} onClick={() => { setSelectionMode(true); setSelectedOfferIds(new Set()); }}>Vybrat nabídky ke smazání</button>}
-              {(search || verdict !== 'all' || historyPeriod !== 'all' || newOnly || !['active','saved','applied'].includes(collection)) && <button type="button" className="min-h-11 text-left text-sm font-medium text-brand" onClick={() => { resetFilters(); if (!['active','saved','applied'].includes(collection)) setCollection('active'); }}>Zrušit filtry</button>}
+              {(search || verdict !== 'all' || historyPeriod !== 'all' || newOnly || !['active','saved','applied'].includes(collection)) && <button type="button" className="min-h-11 text-left text-sm font-medium text-brand" onClick={() => { resetFilters(); if (!['active','saved','applied'].includes(collection)) changeFilter(setCollection,'active'); }}>Zrušit filtry</button>}
             </div>
           </details>
+          </div>
         </div>
       </div>}
       {adding && profileId && <AddOfferPanel key={profileId} profileId={profileId} onClose={() => setAdding(false)} onAdded={(result,applied) => { setAdding(false); setReloadKey(value => value + 1); if(applied) openApplication(result.offerId); else navigate('offers', result.offerId); }} onDuplicate={openDuplicate} />}

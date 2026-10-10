@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, UserRound, RefreshCw, Square } from 'lucide-react';
+import { Search, UserRound, RefreshCw, Square, X } from 'lucide-react';
 import ProfileWizard from './ProfileWizard.jsx';
 import ProfileEditor from './ProfileEditor.jsx';
 import SchedulePanel, { displayTime } from './SchedulePanel.jsx';
 import { profileApi as api } from '../lib/profileApi.js';
 
 const money = amount => new Intl.NumberFormat('cs-CZ').format(amount);
+const dismissedHuntErrorStorageKey = 'makai:dismissed-hunt-error';
+
+function HuntErrorNotice({ hunt, onDismiss, className = '' }) {
+  if (!hunt.error) return null;
+  return <div role="alert" className={'flex w-full flex-wrap items-center justify-between gap-2 text-sm text-danger ' + className}>
+    <p>{hunt.error}{hunt.startedAt && <span className="text-xs">{' · Spuštěno ' + displayTime(hunt.startedAt)}</span>}</p>
+    <button type="button" onClick={onDismiss} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-ink-secondary hover:bg-danger-bg hover:text-danger" aria-label="Skrýt hlášku o nedokončeném hledání"><X className="h-3.5 w-3.5" aria-hidden="true" />Skrýt hlášku</button>
+  </div>;
+}
 
 export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact = false, onManage, onManageDocuments, onFirstSearch }) {
   const cloud = import.meta.env.VITE_JOB_SOURCE === 'cloud' || import.meta.env.VITE_SHARED_STORAGE === true;
@@ -19,6 +28,9 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [hunt, setHunt] = useState({ status: 'idle' });
+  const [dismissedHuntErrorId, setDismissedHuntErrorId] = useState(() => {
+    try { return window.localStorage.getItem(dismissedHuntErrorStorageKey) || ''; } catch { return ''; }
+  });
   const [limit, setLimit] = useState(10);
   const [period, setPeriod] = useState('all');
   const [includeUnknownDates, setIncludeUnknownDates] = useState(false);
@@ -27,6 +39,13 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
   const alive = useRef(true);
   const seenRun = useRef('');
   const running = ['queued', 'running', 'stopping'].includes(hunt.status);
+  const huntErrorId = hunt.id || hunt.startedAt || '';
+  const huntErrorDismissed = Boolean(huntErrorId && huntErrorId === dismissedHuntErrorId);
+  function dismissHuntError() {
+    if (!huntErrorId) return;
+    setDismissedHuntErrorId(huntErrorId);
+    try { window.localStorage.setItem(dismissedHuntErrorStorageKey, huntErrorId); } catch {}
+  }
   const [stopping, setStopping] = useState(false);
   const [scheduleDirty, setScheduleDirty] = useState(false);
 
@@ -128,7 +147,8 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
     {running && <p role="status" className="w-full text-xs text-ink-secondary">{cloud ? 'Stránku můžeš zavřít. Výsledky se uloží do přehledu.' : 'Hledání běží na tomto počítači.'}</p>}
     {notice && <p role="status" className="w-full text-xs text-fit-potential-text">{notice}</p>}
     {scheduleDirty && <p className="w-full text-xs text-fit-potential-text">Nejdřív ulož změny v sekci Profil a hledání.</p>}
-    {(error || hunt.error) && <p role="alert" className="w-full text-sm text-danger">{error || hunt.error}</p>}
+    {error && <p role="alert" className="w-full text-sm text-danger">{error}</p>}
+    {hunt.error && !huntErrorDismissed && <HuntErrorNotice hunt={hunt} onDismiss={dismissHuntError} />}
     {hunt.status === 'blocked' && <p role="alert" className="w-full text-sm text-fit-potential-text">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení se zastavilo. Podrobnosti najdeš v Profil a hledání.'}</p>}
     {['done','partial'].includes(hunt.status) && hunt.result && <p role="status" className="w-full text-xs text-ink-secondary">{hunt.status === 'partial' ? 'Hledání částečně dokončeno' : 'Hledání dokončeno'} · uloženo {hunt.result.saved} nabídek</p>}
   </section>;
@@ -210,7 +230,8 @@ export default function ProfilePanel({ onJobsChanged, onProfileChanged, compact 
         </div>
       </details>
     </div>}
-    {(error || hunt.status === 'error') && <p role="alert" className="mt-3 text-sm text-danger">{error || hunt.error}</p>}
+    {error && <p role="alert" className="mt-3 text-sm text-danger">{error}</p>}
+    {hunt.status === 'error' && hunt.error && !huntErrorDismissed && <HuntErrorNotice hunt={hunt} onDismiss={dismissHuntError} className="mt-3" />}
     {profileLoaded && !profile && error && <button type="button" className="button-secondary mt-3" onClick={() => window.location.reload()}>Zkusit načíst profil znovu</button>}
     {cloud && hunt.result?.evaluationLimitReached && <p role="status" className="mt-3 text-xs text-fit-potential-text">Dosažen limit AI hodnocení. Další nabídky zůstávají pro příští hledání.</p>}
     {cloud && hunt.status === 'blocked' && <p role="alert" className="mt-3 text-sm text-fit-potential-text">{hunt.result?.evaluationBlocked?.message || 'AI hodnocení bylo zastaveno. Zkontroluj API kvótu.'}</p>}
